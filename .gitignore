@@ -1,0 +1,34 @@
+# Rust
+/target
+**/target
+Cargo.lock
+
+# Node.js / TypeScript
+node_modules/
+*.node
+dist/
+*.tsbuildinfo
+
+# Go
+*.so
+*.a
+*.dylib
+go.sum
+
+# Kotlin/Java
+*.class
+*.jar
+*.war
+build/
+.gradle/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
