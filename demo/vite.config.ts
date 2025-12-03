@@ -1,12 +1,18 @@
 import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import wasm from 'vite-plugin-wasm';
 import topLevelAwait from 'vite-plugin-top-level-await';
 
 export default defineConfig({
-  plugins: [wasm(), topLevelAwait()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    wasm(),
+    topLevelAwait(),
+  ],
   server: {
     headers: {
-      // Required for SharedArrayBuffer (multithreaded WASM)
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
@@ -20,12 +26,4 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['@d4mr/t2z-wasm'],
   },
-  build: {
-    target: 'esnext',
-  },
-  worker: {
-    format: 'es',
-    plugins: () => [wasm(), topLevelAwait()],
-  },
 });
-

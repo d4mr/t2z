@@ -104,12 +104,12 @@ impl UniffiPayment {
     }
 }
 
+/// Transaction request per ZIP 321 specification
+/// See: https://zips.z.cash/zip-0321
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct UniffiTransactionRequest {
-    /// List of payments
+    /// List of payments (ZIP 321 format)
     pub payments: Vec<UniffiPayment>,
-    /// Optional fee in zatoshis
-    pub fee: Option<u64>,
 }
 
 impl UniffiTransactionRequest {
@@ -119,8 +119,26 @@ impl UniffiTransactionRequest {
 
         Ok(t2z_core::TransactionRequest {
             payments: payments?,
-            fee: self.fee,
         })
+    }
+}
+
+/// Expected transaction output for verification
+/// Per spec: verify_before_signing takes expected_change: [TxOut]
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct UniffiExpectedTxOut {
+    /// Address (transparent or Orchard unified address)
+    pub address: String,
+    /// Value in zatoshis
+    pub amount: u64,
+}
+
+impl UniffiExpectedTxOut {
+    fn to_core(&self) -> t2z_core::ExpectedTxOut {
+        t2z_core::ExpectedTxOut {
+            address: self.address.clone(),
+            amount: self.amount,
+        }
     }
 }
 
@@ -167,10 +185,18 @@ impl UniffiPczt {
 // ============================================================================
 
 /// Proposes a transaction from transparent inputs to transparent and/or shielded outputs
+///
+/// # Arguments
+/// * `inputs_to_spend` - UTXOs to spend
+/// * `transaction_request` - ZIP 321 payment request (payments only)
+/// * `change_address` - Optional address for change (transparent or Orchard)
+/// * `network` - "mainnet" or "testnet"
+/// * `expiry_height` - Transaction expiry height
 #[uniffi::export]
 pub fn propose_transaction(
     inputs_to_spend: Vec<UniffiTransparentInput>,
     transaction_request: UniffiTransactionRequest,
+    change_address: Option<String>,
     network: String,
     expiry_height: u32,
 ) -> Result<Arc<UniffiPczt>, UniffiError> {
@@ -190,8 +216,86 @@ pub fn propose_transaction(
         }
     };
 
-    let pczt = t2z_core::propose_transaction(&inputs, request, network, expiry_height)?;
+    let pczt = t2z_core::propose_transaction(
+        &inputs,
+        request,
+        change_address.as_deref(),
+        network,
+        expiry_height,
+    )?;
     Ok(Arc::new(UniffiPczt { inner: pczt }))
+}
+
+/// Verifies the PCZT matches the original transaction request before signing
+///
+/// Per spec: this may be skipped if the same entity created and is signing the PCZT
+/// with no third-party involvement.
+///
+/// # Arguments
+/// * `pczt` - The PCZT to verify
+/// * `transaction_request` - Original ZIP 321 payment request
+/// * `expected_change` - List of expected change outputs (address + amount)
+#[uniffi::export]
+pub fn verify_before_signing(
+    pczt: Arc<UniffiPczt>,
+    transaction_request: UniffiTransactionRequest,
+    expected_change: Vec<UniffiExpectedTxOut>,
+) -> Result<(), UniffiError> {
+    let request = transaction_request.to_core()?;
+    let core_expected_change: Vec<t2z_core::ExpectedTxOut> =
+        expected_change.iter().map(|c| c.to_core()).collect();
+
+    t2z_core::verify_before_signing(&pczt.inner, &request, &core_expected_change)?;
+    Ok(())
+}
+
+/// Gets the sighash for a transparent input
+///
+/// The returned sighash should be signed externally, then the signature
+/// appended using append_signature.
+#[uniffi::export]
+pub fn get_sighash(pczt: Arc<UniffiPczt>, input_index: u32) -> Result<String, UniffiError> {
+    let sighash = t2z_core::get_sighash(&pczt.inner, input_index as usize)?;
+    Ok(hex::encode(sighash))
+}
+
+/// Appends a signature to a transparent input
+///
+/// # Arguments
+/// * `pczt` - The PCZT
+/// * `input_index` - Index of the input to sign
+/// * `pubkey_hex` - Compressed public key (33 bytes, hex)
+/// * `signature_hex` - DER-encoded ECDSA signature (hex)
+#[uniffi::export]
+pub fn append_signature(
+    pczt: Arc<UniffiPczt>,
+    input_index: u32,
+    pubkey_hex: String,
+    signature_hex: String,
+) -> Result<Arc<UniffiPczt>, UniffiError> {
+    let pubkey_bytes = hex::decode(&pubkey_hex).map_err(|e| UniffiError::Error {
+        msg: format!("Invalid pubkey hex: {}", e),
+    })?;
+
+    if pubkey_bytes.len() != 33 {
+        return Err(UniffiError::Error {
+            msg: "Public key must be 33 bytes".to_string(),
+        });
+    }
+
+    let pubkey: [u8; 33] = pubkey_bytes.try_into().unwrap();
+
+    let signature_bytes = hex::decode(&signature_hex).map_err(|e| UniffiError::Error {
+        msg: format!("Invalid signature hex: {}", e),
+    })?;
+
+    let signed = t2z_core::append_signature(
+        pczt.inner.clone(),
+        input_index as usize,
+        &pubkey,
+        &signature_bytes,
+    )?;
+    Ok(Arc::new(UniffiPczt { inner: signed }))
 }
 
 /// Proves a transaction (builds proving key automatically, ~10 seconds first call)

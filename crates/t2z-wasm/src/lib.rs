@@ -223,6 +223,48 @@ impl WasmPayment {
 }
 
 // ============================================================================
+// Expected TxOut (for verify_before_signing)
+// ============================================================================
+
+/// Expected transaction output for verification
+/// Per spec: verify_before_signing takes expected_change: [TxOut]
+#[wasm_bindgen]
+#[derive(Clone)]
+pub struct WasmExpectedTxOut {
+    /// Address (transparent or Orchard unified address)
+    address: String,
+    /// Value in zatoshis
+    amount: u64,
+}
+
+#[wasm_bindgen]
+impl WasmExpectedTxOut {
+    #[wasm_bindgen(constructor)]
+    pub fn new(address: String, amount: u64) -> Self {
+        Self { address, amount }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn address(&self) -> String {
+        self.address.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn amount(&self) -> u64 {
+        self.amount
+    }
+}
+
+impl WasmExpectedTxOut {
+    fn to_core(&self) -> t2z_core::ExpectedTxOut {
+        t2z_core::ExpectedTxOut {
+            address: self.address.clone(),
+            amount: self.amount,
+        }
+    }
+}
+
+// ============================================================================
 // PCZT Wrapper
 // ============================================================================
 
@@ -296,7 +338,6 @@ impl WasmPczt {
 pub fn propose_transaction(
     inputs: Vec<WasmTransparentInput>,
     payments: Vec<WasmPayment>,
-    fee: Option<u64>,
     change_address: Option<String>,
     network: &str,
     expiry_height: u32,
@@ -317,12 +358,16 @@ pub fn propose_transaction(
 
     let request = t2z_core::TransactionRequest {
         payments: core_payments,
-        fee,
-        change_address,
     };
 
-    let pczt = t2z_core::propose_transaction(&core_inputs, request, network, expiry_height)
-        .map_err(|e| JsError::new(&format!("Failed to propose transaction: {}", e)))?;
+    let pczt = t2z_core::propose_transaction(
+        &core_inputs,
+        request,
+        change_address.as_deref(),
+        network,
+        expiry_height,
+    )
+    .map_err(|e| JsError::new(&format!("Failed to propose transaction: {}", e)))?;
 
     Ok(WasmPczt { inner: pczt })
 }
@@ -345,6 +390,9 @@ pub fn prove_transaction(pczt: &WasmPczt) -> Result<WasmPczt, JsError> {
 }
 
 /// Sign a transparent input with the provided private key.
+///
+/// This is a convenience function that combines `get_sighash` and signing internally.
+/// For external signing (HSM/hardware wallets), use `get_sighash` and `append_signature`.
 ///
 /// # Arguments
 /// * `pczt` - The PCZT to sign
@@ -374,6 +422,107 @@ pub fn sign_transparent_input(
             .map_err(|e| JsError::new(&format!("Failed to sign input: {}", e)))?;
 
     Ok(WasmPczt { inner: signed })
+}
+
+/// Get the sighash for a transparent input (ZIP 244).
+///
+/// Use this for external signing (HSM/hardware wallets):
+/// 1. Call `get_sighash` to get the 32-byte hash
+/// 2. Sign the hash externally with ECDSA secp256k1
+/// 3. Call `append_signature` with the result
+///
+/// # Arguments
+/// * `pczt` - The PCZT
+/// * `input_index` - Index of the transparent input
+///
+/// # Returns
+/// 32-byte sighash as hex string
+#[wasm_bindgen]
+pub fn get_sighash(pczt: &WasmPczt, input_index: u32) -> Result<String, JsError> {
+    let sighash = t2z_core::get_sighash(&pczt.inner, input_index as usize)
+        .map_err(|e| JsError::new(&format!("Failed to get sighash: {}", e)))?;
+    Ok(hex::encode(sighash))
+}
+
+/// Append a pre-computed signature to a transparent input.
+///
+/// The signature should be created by signing the output of `get_sighash`
+/// with ECDSA secp256k1, then appending the sighash type byte (0x01 for SIGHASH_ALL).
+///
+/// # Arguments
+/// * `pczt` - The PCZT to update
+/// * `input_index` - Index of the transparent input
+/// * `pubkey_hex` - 33-byte compressed public key as hex
+/// * `signature_hex` - DER-encoded signature + sighash type byte as hex
+///
+/// # Returns
+/// Updated PCZT with the signature added
+#[wasm_bindgen]
+pub fn append_signature(
+    pczt: &WasmPczt,
+    input_index: u32,
+    pubkey_hex: &str,
+    signature_hex: &str,
+) -> Result<WasmPczt, JsError> {
+    let pubkey_bytes = hex::decode(pubkey_hex)
+        .map_err(|e| JsError::new(&format!("Invalid pubkey hex: {}", e)))?;
+
+    if pubkey_bytes.len() != 33 {
+        return Err(JsError::new("Public key must be 33 bytes (compressed)"));
+    }
+
+    let mut pubkey = [0u8; 33];
+    pubkey.copy_from_slice(&pubkey_bytes);
+
+    let signature = hex::decode(signature_hex)
+        .map_err(|e| JsError::new(&format!("Invalid signature hex: {}", e)))?;
+
+    let updated = t2z_core::append_signature(
+        pczt.inner.clone(),
+        input_index as usize,
+        &pubkey,
+        &signature,
+    )
+    .map_err(|e| JsError::new(&format!("Failed to append signature: {}", e)))?;
+
+    Ok(WasmPczt { inner: updated })
+}
+
+/// Verify the PCZT matches the original transaction request before signing.
+///
+/// This is an important security check for multi-party transaction construction.
+/// It verifies:
+/// - All requested payments are present
+/// - No unexpected outputs were added
+/// - Change output matches expectations (if any)
+///
+/// # Arguments
+/// * `pczt` - The PCZT to verify
+/// * `payments` - The original payments array used to create the PCZT
+/// * `change_address` - Expected change address (optional)
+/// * `change_amount` - Expected change amount in zatoshis (optional)
+///
+/// # Returns
+/// Ok if verification passes, error with details otherwise
+#[wasm_bindgen]
+pub fn verify_before_signing(
+    pczt: &WasmPczt,
+    payments: Vec<WasmPayment>,
+    expected_change: Vec<WasmExpectedTxOut>,
+) -> Result<(), JsError> {
+    let core_payments: Result<Vec<t2z_core::Payment>, JsError> =
+        payments.iter().map(|p| p.to_core()).collect();
+    let core_payments = core_payments?;
+
+    let core_expected_change: Vec<t2z_core::ExpectedTxOut> =
+        expected_change.iter().map(|c| c.to_core()).collect();
+
+    let request = t2z_core::TransactionRequest {
+        payments: core_payments,
+    };
+
+    t2z_core::verify_before_signing(&pczt.inner, &request, &core_expected_change)
+        .map_err(|e| JsError::new(&format!("Verification failed: {}", e)))
 }
 
 /// Combine multiple PCZTs into one.
@@ -422,35 +571,6 @@ pub fn finalize_and_extract_hex(pczt: &WasmPczt) -> Result<String, JsError> {
 #[wasm_bindgen]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
-}
-
-/// Calculate the ZIP-317 fee for a transaction.
-///
-/// # Arguments
-/// * `num_transparent_inputs` - Number of P2PKH transparent inputs
-/// * `num_transparent_outputs` - Number of P2PKH transparent outputs (including change)
-/// * `num_orchard_outputs` - Number of Orchard outputs
-///
-/// # Returns
-/// The fee in zatoshis
-#[wasm_bindgen]
-pub fn calculate_fee(
-    num_transparent_inputs: u32,
-    num_transparent_outputs: u32,
-    num_orchard_outputs: u32,
-) -> u64 {
-    // For Orchard, we need at least 2 actions (dummy spend + outputs)
-    let num_orchard_actions = if num_orchard_outputs > 0 {
-        std::cmp::max(2, num_orchard_outputs as usize)
-    } else {
-        0
-    };
-    
-    t2z_core::calculate_zip317_fee(
-        num_transparent_inputs as usize,
-        num_transparent_outputs as usize,
-        num_orchard_actions,
-    )
 }
 
 // ============================================================================
