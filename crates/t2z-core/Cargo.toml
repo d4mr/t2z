@@ -1,0 +1,38 @@
+[package]
+name = "t2z-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core library for T2Z - Transparent to Shielded Zcash transactions"
+
+[dependencies]
+# Core PCZT functionality
+pczt.workspace = true
+
+# Zcash dependencies
+orchard.workspace = true
+sapling-crypto.workspace = true
+zcash_transparent.workspace = true
+zcash_primitives.workspace = true
+zcash_protocol.workspace = true
+zcash_address.workspace = true
+zcash_script.workspace = true
+
+# Crypto
+secp256k1.workspace = true
+getrandom.workspace = true
+rand_core.workspace = true
+
+# Serialization
+serde.workspace = true
+hex.workspace = true
+base64.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Caching
+once_cell.workspace = true
+

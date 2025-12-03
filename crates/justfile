@@ -1,0 +1,9 @@
+build-wasm:
+  CC="$(brew --prefix llvm)/bin/clang" \
+  AR="$(brew --prefix llvm)/bin/llvm-ar" \
+  RUSTUP_TOOLCHAIN=nightly \
+  wasm-pack build
+  cd t2z-wasm && 
+
+test-wasm:
+  cd t2z-wasm && wasm-pack test --safari

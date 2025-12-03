@@ -1,6 +1,6 @@
 {
   "name": "@d4mr/t2z",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Production-ready TypeScript SDK for sending from Transparent to shielded (Zero-knowledge) addresses on Zcash with Orchard support",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

@@ -1,0 +1,27 @@
+[package]
+name = "t2z-uniffi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "UniFFI bindings for T2Z - Go, Kotlin, and Java support"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[dependencies]
+t2z-core.workspace = true
+
+# UniFFI
+uniffi.workspace = true
+
+# Serialization
+hex.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+[build-dependencies]
+uniffi = { workspace = true, features = ["build"] }
+
