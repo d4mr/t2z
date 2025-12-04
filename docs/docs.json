@@ -15,11 +15,7 @@
         "groups": [
           {
             "group": "Getting Started",
-            "pages": [
-              "index",
-              "quickstart",
-              "concepts"
-            ]
+            "pages": ["index", "quickstart", "concepts"]
           },
           {
             "group": "Transaction Flow",
@@ -55,9 +51,7 @@
         "groups": [
           {
             "group": "Overview",
-            "pages": [
-              "api-reference/index"
-            ]
+            "pages": ["api-reference/index"]
           },
           {
             "group": "Transaction Construction",
@@ -124,12 +118,7 @@
     }
   },
   "contextual": {
-    "options": [
-      "copy",
-      "chatgpt",
-      "claude",
-      "cursor"
-    ]
+    "options": ["copy", "chatgpt", "claude", "cursor"]
   },
   "footer": {
     "socials": {
@@ -142,5 +131,9 @@
   "metadata": {
     "og:site_name": "t2z Documentation",
     "og:image": "https://t2z.d4mr.com/images/t2z_hero.png"
+  },
+
+  "search": {
+    "mode": "ai"
   }
 }
