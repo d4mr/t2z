@@ -1,0 +1,82 @@
+---
+title: "get_sighash"
+description: "Get the signature hash for external signing"
+---
+
+Computes the signature hash (sighash) for a transparent input, enabling external signing with hardware wallets or HSMs.
+
+## Signature
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    function get_sighash(pczt: WasmPczt, input_index: number): string
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func GetSighash(pczt *Pczt, inputIndex uint32) ([]byte, error)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun getSighash(pczt: Pczt, inputIndex: UInt): ByteArray
+    ```
+  </Tab>
+</Tabs>
+
+## Parameters
+
+<ResponseField name="pczt" type="Pczt" required>
+  The PCZT containing the input to sign
+</ResponseField>
+
+<ResponseField name="input_index" type="number" required>
+  Index of the transparent input (0-based)
+</ResponseField>
+
+## Returns
+
+32-byte signature hash as hex string (TypeScript) or bytes (Go/Kotlin).
+
+## Example
+
+```typescript
+// Get sighash for input 0
+const sighashHex = t2z.get_sighash(pczt, 0);
+// "64a1ef0a32a709943685a39db55a5abf3bdd3e395f9b8ecd7dc618b2d2f88e9b"
+
+// Sign with secp256k1 ECDSA
+import { secp256k1 } from '@noble/curves/secp256k1';
+const sig = secp256k1.sign(hexToBytes(sighashHex), privateKeyBytes);
+const derSig = sig.toDERRawBytes();
+
+// Append SIGHASH_ALL type
+const sigWithType = new Uint8Array([...derSig, 0x01]);
+
+// Add to PCZT
+pczt = t2z.append_signature(pczt, 0, pubkeyHex, bytesToHex(sigWithType));
+```
+
+## Hardware Wallet Flow
+
+```typescript
+// 1. Get sighash
+const sighash = t2z.get_sighash(pczt, inputIndex);
+
+// 2. Send to hardware wallet
+const signature = await ledger.signMessage(
+  hexToBytes(sighash),
+  "m/44'/133'/0'/0/0"  // Zcash path
+);
+
+// 3. Append to PCZT
+pczt = t2z.append_signature(pczt, inputIndex, pubkey, signature);
+```
+
+## See Also
+
+- [`append_signature`](/api-reference/append-signature)
+- [`sign_transparent_input`](/api-reference/sign-transparent-input)
+- [Transaction Flow: Sign](/flow/sign)
+

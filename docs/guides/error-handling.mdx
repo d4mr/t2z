@@ -1,0 +1,211 @@
+---
+title: "Error Handling"
+description: "Handle and recover from common errors"
+---
+
+t2z provides descriptive error messages to help diagnose issues. This guide covers common errors and their solutions.
+
+## Error Types
+
+### InvalidAddress
+
+```
+Invalid address: NotZcash
+Invalid address: IncorrectNetwork { expected: Test, actual: Main }
+```
+
+**Cause:** Address couldn't be parsed or is for the wrong network.
+
+**Solution:**
+- Verify the address is valid (try pasting in a block explorer)
+- Check you're using the correct network (`mainnet` vs `testnet`)
+- Mainnet addresses start with `u1`, `t1`, `zs1`
+- Testnet addresses start with `utest1`, `tm`, `ztestsapling`
+
+### InsufficientFunds
+
+```
+InsufficientFunds(ZatBalance(5000))
+```
+
+**Cause:** Total input value doesn't cover payments + fee.
+
+**Solution:**
+- Add more inputs
+- Reduce payment amounts
+- Check you're calculating amounts in zatoshis (not ZEC)
+
+```typescript
+// Wrong: 0.01 ZEC
+const amount = 0.01;
+
+// Right: 1,000,000 zatoshis = 0.01 ZEC
+const amount = 1_000_000n;
+```
+
+### ChangeRequired
+
+```
+ChangeRequired(ZatBalance(35000))
+```
+
+**Cause:** There's leftover value but no change address provided.
+
+**Solution:**
+- Provide a change address to `propose_transaction`
+- Or adjust payment amounts to exactly match inputs minus fee
+
+### OrchardBuilderNotAvailable
+
+```
+Failed to add Orchard output: OrchardBuilderNotAvailable
+```
+
+**Cause:** Expiry height is before Nu5 activation.
+
+**Solution:**
+- Use an expiry height after Nu5:
+  - Mainnet: > 1,687,104
+  - Testnet: > 1,842,420
+- Use current block height + 100
+
+```typescript
+// Get current height from RPC/lightwalletd
+const currentHeight = await fetchCurrentBlockHeight();
+const expiryHeight = currentHeight + 100;
+```
+
+### Invalid Memo
+
+```
+Invalid memo hex: Odd number of digits
+```
+
+**Cause:** Memo must be hex-encoded.
+
+**Solution:**
+```typescript
+// Wrong: plain text
+const memo = 'Hello';
+
+// Right: hex-encoded
+const memo = Buffer.from('Hello').toString('hex');
+// "48656c6c6f"
+```
+
+### Failed to Deserialize PCZT
+
+```
+Failed to deserialize PCZT: DeserializeBadOption
+```
+
+**Cause:** PCZT data is corrupted or in wrong format.
+
+**Solution:**
+- Ensure hex string is valid
+- Verify the PCZT wasn't truncated during transmission
+- Check you're not double-hex-encoding
+
+### Missing Signatures
+
+```
+Missing signatures for transparent inputs
+```
+
+**Cause:** Tried to finalize before signing all inputs.
+
+**Solution:**
+```typescript
+const info = t2z.inspect_pczt(pczt.to_hex());
+info.transparent_inputs.forEach((input, i) => {
+  if (!input.is_signed) {
+    console.log(`Need to sign input ${i}`);
+  }
+});
+```
+
+### tx-expiring-soon
+
+```
+tx-expiring-soon: expiryheight is 2500040 but should be at least 3716767
+```
+
+**Cause:** Expiry height is too close to current block height.
+
+**Solution:**
+- Use `currentBlockHeight + 100` or more
+- Testnet currently around block 3,720,000+
+
+## Best Practices
+
+### Wrap Operations in Try-Catch
+
+```typescript
+try {
+  const pczt = t2z.propose_transaction(inputs, payments, changeAddr, network, expiry);
+} catch (err) {
+  if (err.message.includes('InsufficientFunds')) {
+    console.error('Not enough funds');
+  } else if (err.message.includes('InvalidAddress')) {
+    console.error('Bad address');
+  } else {
+    console.error('Unknown error:', err.message);
+  }
+}
+```
+
+### Validate Early
+
+```typescript
+// Validate addresses before calling propose_transaction
+function isValidAddress(address: string, network: 'mainnet' | 'testnet'): boolean {
+  const prefixes = network === 'mainnet' 
+    ? ['u1', 't1', 'zs1'] 
+    : ['utest1', 'tm', 'ztestsapling'];
+  return prefixes.some(p => address.startsWith(p));
+}
+```
+
+### Check PCZT State Before Operations
+
+```typescript
+const info = t2z.inspect_pczt(pczt.to_hex());
+
+// Before signing
+if (info.transparent_inputs.length === 0) {
+  throw new Error('No inputs to sign');
+}
+
+// Before proving
+if (!info.all_inputs_signed) {
+  throw new Error('Sign all inputs first');
+}
+
+// Before finalizing
+if (!info.has_orchard_proofs) {
+  throw new Error('Generate proofs first');
+}
+```
+
+## Debugging Tips
+
+### Log PCZT State
+
+```typescript
+function logPcztState(label: string, pcztHex: string) {
+  const info = t2z.inspect_pczt(pcztHex);
+  console.log(`[${label}]`, {
+    inputs: info.transparent_inputs.length,
+    orchardOutputs: info.orchard_outputs.length,
+    fee: info.implied_fee,
+    signed: info.all_inputs_signed,
+    proved: info.has_orchard_proofs,
+  });
+}
+
+// Use throughout the flow
+logPcztState('After propose', pczt.to_hex());
+logPcztState('After sign', pczt.to_hex());
+logPcztState('After prove', pczt.to_hex());
+```
+

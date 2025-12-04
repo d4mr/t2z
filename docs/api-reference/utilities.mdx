@@ -1,0 +1,80 @@
+---
+title: "Utilities"
+description: "Helper functions for proving key management and testing"
+---
+
+## Proving Key Management
+
+### prebuild_proving_key
+
+Build and cache the Orchard proving key. Call at app startup to avoid delays during transaction construction.
+
+```typescript
+if (!t2z.is_proving_key_ready()) {
+  console.log('Building proving key...');
+  t2z.prebuild_proving_key();
+}
+```
+
+### is_proving_key_ready
+
+Check if the proving key is cached.
+
+```typescript
+const ready = t2z.is_proving_key_ready();
+// true if key is built, false otherwise
+```
+
+## Testing Utilities
+
+### generate_test_address
+
+Generate a random Orchard address for testing.
+
+```typescript
+const address = t2z.generate_test_address('testnet');
+// "utest1abc..."
+```
+
+<Warning>
+  For testing only. Do not use for real funds.
+</Warning>
+
+### generate_test_keypair
+
+Generate a random keypair for testing.
+
+```typescript
+const keypair = t2z.generate_test_keypair('testnet');
+
+// Returns:
+// {
+//   transparent_address: "tmAbc...",
+//   pubkey: "03abc...",
+//   privkey: "deadbeef...",
+//   orchard_address: "utest1...",
+//   orchard_fvk: "uviewtest1..."
+// }
+```
+
+<Warning>
+  For testing only. Do not use for real funds.
+</Warning>
+
+## Version
+
+Get the library version.
+
+```typescript
+const version = t2z.version();
+// "0.1.0"
+```
+
+## Initialization (TypeScript/WASM only)
+
+Initialize the WASM module for better error messages.
+
+```typescript
+t2z.init();
+```
+

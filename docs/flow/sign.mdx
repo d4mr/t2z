@@ -1,0 +1,230 @@
+---
+title: "Sign Transparent Inputs"
+description: "Add signatures to each transparent input in the PCZT"
+---
+
+Signing is a two-step process per ZIP 374:
+1. **Get the sighash** — Compute the signature hash for an input
+2. **Append the signature** — Add the signed result to the PCZT
+
+This separation enables **external signing** with hardware wallets, HSMs, or air-gapped systems.
+
+## Two Approaches
+
+<CardGroup cols={2}>
+  <Card title="External Signing" icon="key">
+    Use `get_sighash` + `append_signature` when:
+    - Using a hardware wallet
+    - Key is in an HSM
+    - Signing on a separate system
+    
+    **Recommended for production**
+  </Card>
+  <Card title="Convenience Method" icon="bolt">
+    Use `sign_transparent_input` when:
+    - Key is available in memory
+    - Testing/development
+    - Simple use cases
+    
+    **Combines both steps internally**
+  </Card>
+</CardGroup>
+
+## External Signing Flow
+
+### Step 1: Get Sighash
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    // Get the 32-byte sighash for input 0
+    const sighashHex = t2z.get_sighash(pczt, 0);
+    // Returns: "64a1ef0a32a709943685a39db55a5abf..."
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    sighash, err := t2z.GetSighash(pczt, 0)
+    // Returns: []byte{0x64, 0xa1, 0xef, ...}
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    val sighash = getSighash(pczt, 0u)
+    // Returns: ByteArray
+    ```
+  </Tab>
+</Tabs>
+
+### Step 2: Sign Externally
+
+Sign the sighash with ECDSA secp256k1. The signature must be DER-encoded with the sighash type byte appended.
+
+```typescript
+import { secp256k1 } from '@noble/curves/secp256k1';
+
+// Sign the sighash
+const sighashBytes = hexToBytes(sighashHex);
+const signature = secp256k1.sign(sighashBytes, privateKeyBytes);
+
+// Get DER-encoded signature
+const derSignature = signature.toDERRawBytes();
+
+// Append SIGHASH_ALL type byte (0x01)
+const signatureWithType = new Uint8Array([...derSignature, 0x01]);
+const signatureHex = bytesToHex(signatureWithType);
+```
+
+### Step 3: Append Signature
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    pczt = t2z.append_signature(
+      pczt,
+      0,                    // Input index
+      pubkeyHex,            // 33-byte compressed pubkey
+      signatureHex          // DER signature + sighash type
+    );
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    pczt, err = t2z.AppendSignature(pczt, 0, pubkey, signature)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    pczt = appendSignature(pczt, 0u, pubkey, signature)
+    ```
+  </Tab>
+</Tabs>
+
+## Convenience Method
+
+For simple cases where the private key is available:
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    // Sign input 0 with private key
+    pczt = t2z.sign_transparent_input(
+      pczt,
+      0,                    // Input index
+      privateKeyHex         // 32-byte private key
+    );
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    pczt, err = t2z.SignTransparentInput(pczt, 0, privateKey)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    pczt = signTransparentInput(pczt, 0u, privateKey)
+    ```
+  </Tab>
+</Tabs>
+
+## Signing Multiple Inputs
+
+Each input must be signed individually:
+
+```typescript
+// Sign all inputs
+for (let i = 0; i < inputs.length; i++) {
+  const sighash = t2z.get_sighash(pczt, i);
+  const signature = await sign(sighash, keys[i]);
+  pczt = t2z.append_signature(pczt, i, pubkeys[i], signature);
+}
+
+// Verify all signed
+const info = t2z.inspect_pczt(pczt.to_hex());
+console.log('All signed:', info.all_inputs_signed);
+```
+
+## Signature Format
+
+The signature appended to the PCZT must be:
+
+```
+[DER-encoded ECDSA signature] + [sighash type byte]
+```
+
+| Component | Size | Description |
+|-----------|------|-------------|
+| DER signature | 70-72 bytes | Standard DER-encoded ECDSA |
+| Sighash type | 1 byte | `0x01` for SIGHASH_ALL |
+
+### Example DER Signature
+
+```
+30440220                  # DER sequence header
+359fd725c1bd0d5506c6...   # r value (32 bytes)
+0220                      # Integer header
+11574b391407ba5e04ea...   # s value (32 bytes)
+01                        # SIGHASH_ALL
+```
+
+## Hardware Wallet Integration
+
+The external signing flow is designed for hardware wallets:
+
+```typescript
+// 1. Get sighash on the host
+const sighash = t2z.get_sighash(pczt, inputIndex);
+
+// 2. Send to hardware wallet for signing
+const signature = await hardwareWallet.signEcdsa({
+  message: hexToBytes(sighash),
+  keyPath: "m/44'/133'/0'/0/0",  // Zcash transparent path
+});
+
+// 3. Append signature on the host
+pczt = t2z.append_signature(pczt, inputIndex, pubkey, signature);
+```
+
+<Tip>
+  The sighash is a standard 32-byte hash. Any ECDSA secp256k1 signer that supports raw message signing will work.
+</Tip>
+
+## Verifying Signatures
+
+After signing, use `inspect_pczt` to verify:
+
+```typescript
+const info = t2z.inspect_pczt(pczt.to_hex());
+
+// Check each input
+info.transparent_inputs.forEach((input, i) => {
+  console.log(`Input ${i}: ${input.is_signed ? '✓ Signed' : '○ Not signed'}`);
+});
+
+// Check all signed
+if (info.all_inputs_signed) {
+  console.log('All inputs signed, ready for proving');
+}
+```
+
+## Common Errors
+
+<AccordionGroup>
+  <Accordion title="Invalid signature">
+    The signature doesn't validate for the sighash. Check:
+    - Correct private key for the input
+    - Proper DER encoding
+    - Sighash type byte (0x01) appended
+  </Accordion>
+  <Accordion title="Invalid pubkey">
+    The public key doesn't match the input's scriptPubkey. Ensure you're using the correct key for each input.
+  </Accordion>
+  <Accordion title="Invalid input index">
+    The input index is out of bounds. Check `inputs.length` from `inspect_pczt`.
+  </Accordion>
+</AccordionGroup>
+
+## Next Step
+
+After all inputs are signed, proceed to [generating proofs](/flow/prove) for Orchard outputs.
+

@@ -1,0 +1,68 @@
+---
+title: "finalize_and_extract"
+description: "Extract the final transaction bytes for broadcast"
+---
+
+Performs final validation and extracts the raw transaction bytes ready for broadcast.
+
+## Signature
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    function finalize_and_extract(pczt: WasmPczt): Uint8Array
+    function finalize_and_extract_hex(pczt: WasmPczt): string
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func FinalizeAndExtract(pczt *Pczt) ([]byte, error)
+    func FinalizeAndExtractHex(pczt *Pczt) (string, error)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun finalizeAndExtract(pczt: Pczt): ByteArray
+    fun finalizeAndExtractHex(pczt: Pczt): String
+    ```
+  </Tab>
+</Tabs>
+
+## Parameters
+
+<ResponseField name="pczt" type="Pczt" required>
+  The PCZT to finalize (must be fully signed and proved)
+</ResponseField>
+
+## Returns
+
+Raw transaction bytes or hex string.
+
+## Prerequisites
+
+Before calling, ensure:
+- All transparent inputs are signed
+- Orchard proofs are generated (if any Orchard outputs)
+
+```typescript
+const info = t2z.inspect_pczt(pczt.to_hex());
+if (!info.all_inputs_signed || !info.has_orchard_proofs) {
+  throw new Error('Not ready to finalize');
+}
+```
+
+## Example
+
+```typescript
+// Get transaction as hex (for broadcasting)
+const txHex = t2z.finalize_and_extract_hex(pczt);
+console.log('Transaction size:', txHex.length / 2, 'bytes');
+
+// Broadcast via RPC
+await sendRawTransaction(txHex);
+```
+
+## See Also
+
+- [Transaction Flow: Finalize](/flow/finalize)
+

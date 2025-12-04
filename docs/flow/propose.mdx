@@ -1,0 +1,223 @@
+---
+title: "Propose Transaction"
+description: "Create a PCZT from transparent inputs and payment outputs"
+---
+
+The `propose_transaction` function creates a PCZT by combining the **Creator**, **Constructor**, and **IO Finalizer** roles from ZIP 374.
+
+## Function Signature
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    function propose_transaction(
+      inputs: WasmTransparentInput[],
+      payments: WasmPayment[],
+      change_address: string | null,
+      network: 'mainnet' | 'testnet',
+      expiry_height: number
+    ): WasmPczt
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func ProposeTransaction(
+      inputs []TransparentInput,
+      payments []Payment,
+      changeAddress *string,
+      network string,
+      expiryHeight uint32,
+    ) (*Pczt, error)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun proposeTransaction(
+      inputs: List<TransparentInput>,
+      payments: List<Payment>,
+      changeAddress: String?,
+      network: String,
+      expiryHeight: UInt
+    ): Pczt
+    ```
+  </Tab>
+</Tabs>
+
+## Parameters
+
+<ParamField path="inputs" type="TransparentInput[]" required>
+  Array of transparent UTXOs to spend. Each input requires:
+  
+  | Field | Type | Description |
+  |-------|------|-------------|
+  | `pubkey` | string | 33-byte compressed public key (hex) |
+  | `prevoutTxid` | string | 32-byte transaction ID (little-endian hex) |
+  | `prevoutIndex` | number | Output index in previous transaction |
+  | `value` | bigint | Value in zatoshis |
+  | `scriptPubkey` | string | P2PKH scriptPubkey (hex) |
+  | `sequence` | number? | Sequence number (default: 0xffffffff) |
+</ParamField>
+
+<ParamField path="payments" type="Payment[]" required>
+  Array of outputs to create. Each payment requires:
+  
+  | Field | Type | Description |
+  |-------|------|-------------|
+  | `address` | string | Unified address (Orchard) or transparent address |
+  | `amount` | bigint | Amount in zatoshis |
+  | `memo` | string? | Hex-encoded memo for shielded outputs (max 512 bytes) |
+  | `label` | string? | Optional display label |
+</ParamField>
+
+<ParamField path="change_address" type="string | null">
+  Address to receive change. Can be:
+  - Unified address with Orchard receiver (recommended for privacy)
+  - Transparent P2PKH address (`t1...` or `tm...`)
+  - `null` if no change expected
+  
+  <Warning>If `total_input > total_payments + fee`, a change address is required.</Warning>
+</ParamField>
+
+<ParamField path="network" type="string" required>
+  Network to use: `'mainnet'` or `'testnet'`
+</ParamField>
+
+<ParamField path="expiry_height" type="number" required>
+  Block height at which the transaction expires. Must be:
+  - After Nu5 activation (mainnet: 1,687,104 / testnet: 1,842,420)
+  - At least `current_height + 40` to avoid "tx-expiring-soon" errors
+</ParamField>
+
+## Example
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    import * as t2z from '@d4mr/t2z-wasm';
+
+    // Prepare inputs
+    const inputs = [
+      new t2z.WasmTransparentInput(
+        '03abc123...',                    // Compressed pubkey (33 bytes hex)
+        'ce15f716...1338',                // Txid (little-endian)
+        0,                                 // Output index
+        1_000_000n,                        // 0.01 ZEC
+        '76a914...88ac',                  // P2PKH scriptPubkey
+        null                               // Default sequence
+      )
+    ];
+
+    // Prepare payments
+    const payments = [
+      new t2z.WasmPayment(
+        'u1abc...',                        // Unified address with Orchard
+        800_000n,                          // 0.008 ZEC
+        Buffer.from('Hello!').toString('hex'),  // Memo
+        'Payment for services'             // Label
+      )
+    ];
+
+    // Get current block height (in production, fetch from lightwalletd)
+    const currentHeight = 3_720_000;
+    const expiryHeight = currentHeight + 100;
+
+    // Create the PCZT
+    const pczt = t2z.propose_transaction(
+      inputs,
+      payments,
+      'u1change...',   // Change goes to Orchard (shielded)
+      'testnet',
+      expiryHeight
+    );
+
+    // Inspect what was created
+    const info = t2z.inspect_pczt(pczt.to_hex());
+    console.log('Fee:', info.implied_fee, 'zatoshis');
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    inputs := []t2z.TransparentInput{{
+        Pubkey:       "03abc123...",
+        PrevoutTxid:  "ce15f716...1338",
+        PrevoutIndex: 0,
+        Value:        1_000_000,
+        ScriptPubkey: "76a914...88ac",
+    }}
+
+    payments := []t2z.Payment{{
+        Address: "u1abc...",
+        Amount:  800_000,
+        Memo:    hex.EncodeToString([]byte("Hello!")),
+    }}
+
+    changeAddr := "u1change..."
+    pczt, err := t2z.ProposeTransaction(
+        inputs,
+        payments,
+        &changeAddr,
+        "testnet",
+        3_720_100,
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## What Happens Internally
+
+1. **Validation** — Inputs and payment addresses are validated
+2. **Fee Calculation** — ZIP 317 fee is computed based on transaction structure
+3. **Change Calculation** — `change = total_input - total_payments - fee`
+4. **Builder Construction** — Zcash transaction builder creates the structure
+5. **PCZT Creation** — Builder output is converted to PCZT format
+6. **IO Finalization** — Input/output metadata is finalized
+
+## Fee Calculation
+
+Fees are calculated automatically according to ZIP 317:
+
+```
+fee = 5000 × max(2, logical_actions)
+logical_actions = max(transparent_inputs, transparent_outputs) + orchard_actions
+```
+
+| Scenario | Fee |
+|----------|-----|
+| 1 input → 1 Orchard output | 10,000 zats |
+| 1 input → 1 Orchard output + Orchard change | 10,000 zats |
+| 2 inputs → 1 Orchard output | 10,000 zats |
+| 3 inputs → 2 Orchard outputs | 15,000 zats |
+
+## Common Errors
+
+<AccordionGroup>
+  <Accordion title="OrchardBuilderNotAvailable">
+    The expiry height is before Nu5 activation. Use a height after:
+    - Mainnet: 1,687,104
+    - Testnet: 1,842,420
+  </Accordion>
+  
+  <Accordion title="InsufficientFunds">
+    Total input value is less than payments + fee. Either:
+    - Add more inputs
+    - Reduce payment amounts
+  </Accordion>
+  
+  <Accordion title="ChangeRequired">
+    There's leftover value but no change address provided. Pass a change address.
+  </Accordion>
+  
+  <Accordion title="InvalidAddress">
+    The address couldn't be parsed. Ensure it's a valid:
+    - Unified address (`u1...` or `utest1...`)
+    - Transparent address (`t1...` or `tm...`)
+  </Accordion>
+</AccordionGroup>
+
+## Next Step
+
+After creating the PCZT, you can optionally [verify it](/flow/verify) before signing, or proceed directly to [signing](/flow/sign).
+

@@ -1,0 +1,96 @@
+---
+title: "append_signature"
+description: "Add a pre-computed signature to a transparent input"
+---
+
+Adds a DER-encoded ECDSA signature to a transparent input in the PCZT.
+
+## Signature
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    function append_signature(
+      pczt: WasmPczt,
+      input_index: number,
+      pubkey: string,
+      signature: string
+    ): WasmPczt
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func AppendSignature(
+      pczt *Pczt,
+      inputIndex uint32,
+      pubkey []byte,
+      signature []byte,
+    ) (*Pczt, error)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun appendSignature(
+      pczt: Pczt,
+      inputIndex: UInt,
+      pubkey: ByteArray,
+      signature: ByteArray
+    ): Pczt
+    ```
+  </Tab>
+</Tabs>
+
+## Parameters
+
+<ResponseField name="pczt" type="Pczt" required>
+  The PCZT to add the signature to
+</ResponseField>
+
+<ResponseField name="input_index" type="number" required>
+  Index of the transparent input (0-based)
+</ResponseField>
+
+<ResponseField name="pubkey" type="string" required>
+  33-byte compressed public key (hex)
+</ResponseField>
+
+<ResponseField name="signature" type="string" required>
+  DER-encoded ECDSA signature with sighash type byte appended (hex)
+</ResponseField>
+
+## Returns
+
+Updated PCZT with the signature added.
+
+## Signature Format
+
+The signature must be DER-encoded with SIGHASH_ALL (0x01) appended:
+
+```
+[DER signature (70-72 bytes)] + [0x01]
+```
+
+## Example
+
+```typescript
+import { secp256k1 } from '@noble/curves/secp256k1';
+
+// Get sighash
+const sighash = t2z.get_sighash(pczt, 0);
+
+// Sign
+const sig = secp256k1.sign(hexToBytes(sighash), privateKey);
+const derSig = sig.toDERRawBytes();
+
+// Append sighash type
+const sigWithType = new Uint8Array([...derSig, 0x01]);
+
+// Add to PCZT
+pczt = t2z.append_signature(pczt, 0, pubkeyHex, bytesToHex(sigWithType));
+```
+
+## See Also
+
+- [`get_sighash`](/api-reference/get-sighash)
+- [`sign_transparent_input`](/api-reference/sign-transparent-input)
+

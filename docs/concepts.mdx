@@ -1,0 +1,179 @@
+---
+title: "Core Concepts"
+description: "Understand the fundamentals of t2z and Zcash shielded transactions"
+---
+
+## PCZT (Partially Constructed Zcash Transaction)
+
+A **PCZT** is a standardized format defined in [ZIP 374](https://zips.z.cash/zip-0374) for building Zcash transactions incrementally across multiple parties or systems.
+
+### Why PCZT?
+
+Traditional transaction construction requires all private keys to be available in one place. PCZT enables:
+
+- **Hardware wallet integration** — Sign on a separate device
+- **Multi-signature workflows** — Multiple parties contribute signatures
+- **Separation of concerns** — Different systems handle different roles
+- **Auditability** — Inspect transaction details before signing
+
+### PCZT Roles
+
+The ZIP 374 specification defines several roles that operate on a PCZT:
+
+| Role | Description | t2z Function |
+|------|-------------|--------------|
+| **Creator** | Creates the initial empty PCZT | `propose_transaction` |
+| **Constructor** | Adds inputs and outputs | `propose_transaction` |
+| **IO Finalizer** | Finalizes input/output data | `propose_transaction` |
+| **Prover** | Generates zero-knowledge proofs | `prove_transaction` |
+| **Signer** | Adds signatures | `get_sighash` + `append_signature` |
+| **Spend Finalizer** | Finalizes for extraction | `finalize_and_extract` |
+| **Transaction Extractor** | Produces final transaction | `finalize_and_extract` |
+
+<Note>
+  In t2z, `propose_transaction` combines the Creator, Constructor, and IO Finalizer roles for simplicity.
+</Note>
+
+## Orchard
+
+**Orchard** is the latest Zcash shielded protocol, activated with the NU5 network upgrade. It uses the Halo 2 proving system.
+
+### Orchard vs Sapling
+
+| Feature | Sapling | Orchard |
+|---------|---------|---------|
+| Proving system | Groth16 | Halo 2 |
+| Trusted setup | Required (~50MB download) | **None** |
+| Proving key | Downloaded | Built on demand |
+| Address prefix | `zs1...` | `u1...` (unified) |
+| Privacy | Good | **Better** (unified addresses) |
+
+### Unified Addresses
+
+Orchard receivers are embedded in **Unified Addresses** (UAs), which can contain multiple receiver types:
+
+```
+u1...  →  Contains Orchard receiver (and optionally Sapling/transparent)
+```
+
+When you send to a unified address, t2z automatically selects the Orchard receiver if present.
+
+## Transparent Inputs
+
+t2z is designed specifically for spending **transparent inputs** — UTXOs from P2PKH addresses (`t1...` or `tm...`).
+
+### TransparentInput Structure
+
+```typescript
+interface TransparentInput {
+  pubkey: string;        // 33-byte compressed public key (hex)
+  prevoutTxid: string;   // 32-byte transaction ID (little-endian hex)
+  prevoutIndex: number;  // Output index in the previous transaction
+  value: bigint;         // Value in zatoshis
+  scriptPubkey: string;  // P2PKH scriptPubkey (hex)
+  sequence?: number;     // Sequence number (default: 0xffffffff)
+}
+```
+
+### Transaction ID Byte Order
+
+<Warning>
+  Block explorers display txids in **big-endian** format, but Zcash internally uses **little-endian**. Always reverse the bytes when using txids from explorers.
+</Warning>
+
+```typescript
+// From block explorer: 3813f53766c6cc012becc81baa7875e2c5d5e3f452f26e11c568d91316f715ce
+// For t2z (reversed): ce15f71613d968c5116ef252f4e3d5c5e27578aa1bc8ec2b01ccc66637f51338
+```
+
+## Payments (ZIP 321)
+
+Payments follow the [ZIP 321](https://zips.z.cash/zip-0321) payment request format:
+
+```typescript
+interface Payment {
+  address: string;   // Unified address or transparent address
+  amount: bigint;    // Amount in zatoshis (1 ZEC = 100,000,000 zatoshis)
+  memo?: string;     // Optional memo for shielded outputs (hex-encoded, max 512 bytes)
+  label?: string;    // Optional display label
+}
+```
+
+### Memos
+
+Memos are only supported for shielded (Orchard) outputs. They must be hex-encoded:
+
+```typescript
+// Convert text to hex
+const memoHex = Buffer.from('Hello Zcash!').toString('hex');
+
+// Use in payment
+new Payment('u1...', 100000n, memoHex, null);
+```
+
+## Fees (ZIP 317)
+
+t2z automatically calculates fees according to [ZIP 317](https://zips.z.cash/zip-0317):
+
+```
+fee = marginal_fee × max(grace_actions, logical_actions)
+```
+
+Where:
+- `marginal_fee` = 5,000 zatoshis
+- `grace_actions` = 2
+- `logical_actions` = max(transparent_inputs, transparent_outputs) + orchard_actions
+
+### Typical Fees
+
+| Transaction Type | Typical Fee |
+|-----------------|-------------|
+| 1 transparent input → 1 Orchard output | 10,000 zats (0.0001 ZEC) |
+| 1 transparent input → 2 Orchard outputs | 10,000 zats |
+| 2 transparent inputs → 1 Orchard output | 10,000 zats |
+
+## Network & Expiry
+
+### Networks
+
+t2z supports both networks:
+- `mainnet` — Production Zcash network
+- `testnet` — Test network for development
+
+### Expiry Height
+
+Every transaction has an expiry height. If the transaction isn't mined by that block, it becomes invalid.
+
+```typescript
+// Must be:
+// 1. After Nu5 activation (mainnet: 1,687,104 / testnet: 1,842,420)
+// 2. At least current_height + 40 to avoid "tx-expiring-soon" errors
+
+const currentHeight = await fetchCurrentBlockHeight();
+const expiryHeight = currentHeight + 100; // ~2.5 hour buffer
+```
+
+<Tip>
+  In production, always fetch the current block height from a lightwalletd server or block explorer API.
+</Tip>
+
+## Zatoshis
+
+All amounts in t2z are in **zatoshis** — the smallest unit of ZEC:
+
+```
+1 ZEC = 100,000,000 zatoshis
+```
+
+```typescript
+// Convert ZEC to zatoshis
+const zatoshis = BigInt(Math.floor(zec * 100_000_000));
+
+// Convert zatoshis to ZEC for display
+const zec = Number(zatoshis) / 100_000_000;
+```
+
+<Warning>
+  Always use `BigInt` for amounts to avoid JavaScript floating-point precision issues.
+</Warning>
+

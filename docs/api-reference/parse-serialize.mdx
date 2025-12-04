@@ -1,0 +1,84 @@
+---
+title: "parse_pczt / serialize_pczt"
+description: "Convert PCZTs to and from bytes for transmission"
+---
+
+Functions for serializing and deserializing PCZTs, useful for transmitting between systems.
+
+## parse_pczt
+
+Parse a PCZT from bytes.
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    function parse_pczt(bytes: Uint8Array): WasmPczt
+    
+    // Or from hex
+    const pczt = WasmPczt.from_hex(hexString);
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func ParsePczt(bytes []byte) (*Pczt, error)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun parsePczt(bytes: ByteArray): Pczt
+    ```
+  </Tab>
+</Tabs>
+
+## serialize_pczt
+
+Serialize a PCZT to bytes.
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    function serialize_pczt(pczt: WasmPczt): Uint8Array
+    
+    // Or to hex
+    const hex = pczt.to_hex();
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func SerializePczt(pczt *Pczt) []byte
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun serializePczt(pczt: Pczt): ByteArray
+    ```
+  </Tab>
+</Tabs>
+
+## Use Cases
+
+### Transmit to External Signer
+
+```typescript
+// Serialize for transmission
+const pcztBytes = t2z.serialize_pczt(pczt);
+const pcztBase64 = btoa(String.fromCharCode(...pcztBytes));
+
+// Send to signer...
+const signedBase64 = await sendToSigner(pcztBase64);
+
+// Parse signed PCZT
+const signedBytes = Uint8Array.from(atob(signedBase64), c => c.charCodeAt(0));
+const signedPczt = t2z.parse_pczt(signedBytes);
+```
+
+### Store and Resume
+
+```typescript
+// Save to storage
+localStorage.setItem('pczt', pczt.to_hex());
+
+// Later, resume
+const pczt = WasmPczt.from_hex(localStorage.getItem('pczt'));
+```
+

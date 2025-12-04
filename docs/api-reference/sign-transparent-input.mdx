@@ -1,0 +1,84 @@
+---
+title: "sign_transparent_input"
+description: "Sign a transparent input with an in-memory private key"
+---
+
+Convenience function that combines `get_sighash` and `append_signature` for cases where the private key is available in memory.
+
+## Signature
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    function sign_transparent_input(
+      pczt: WasmPczt,
+      input_index: number,
+      private_key: string
+    ): WasmPczt
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func SignTransparentInput(
+      pczt *Pczt,
+      inputIndex uint32,
+      privateKey []byte,
+    ) (*Pczt, error)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun signTransparentInput(
+      pczt: Pczt,
+      inputIndex: UInt,
+      privateKey: ByteArray
+    ): Pczt
+    ```
+  </Tab>
+</Tabs>
+
+## Parameters
+
+<ResponseField name="pczt" type="Pczt" required>
+  The PCZT to sign
+</ResponseField>
+
+<ResponseField name="input_index" type="number" required>
+  Index of the transparent input (0-based)
+</ResponseField>
+
+<ResponseField name="private_key" type="string" required>
+  32-byte secp256k1 private key (hex)
+</ResponseField>
+
+## Returns
+
+Updated PCZT with the signature added.
+
+## Example
+
+```typescript
+// Sign input 0
+pczt = t2z.sign_transparent_input(pczt, 0, privateKeyHex);
+
+// Sign all inputs
+for (let i = 0; i < inputs.length; i++) {
+  pczt = t2z.sign_transparent_input(pczt, i, keys[i]);
+}
+```
+
+## When to Use
+
+Use this function when:
+- Private key is available in memory
+- Testing or development
+- Simple single-party transactions
+
+For hardware wallets or HSMs, use [`get_sighash`](/api-reference/get-sighash) + [`append_signature`](/api-reference/append-signature) instead.
+
+## See Also
+
+- [`get_sighash`](/api-reference/get-sighash)
+- [`append_signature`](/api-reference/append-signature)
+- [Transaction Flow: Sign](/flow/sign)
+

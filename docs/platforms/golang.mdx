@@ -1,0 +1,124 @@
+---
+title: "Go"
+description: "Use t2z in Go applications via UniFFI"
+---
+
+<Badge variant="secondary">Coming Soon</Badge>
+
+The Go SDK will be available as `github.com/d4mr/t2z-go`. It uses UniFFI bindings to the Rust core.
+
+## Planned Installation
+
+```bash
+go get github.com/d4mr/t2z-go
+```
+
+## Planned API
+
+The Go API will mirror the TypeScript API with Go idioms:
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    
+    t2z "github.com/d4mr/t2z-go"
+)
+
+func main() {
+    // Create input
+    input := t2z.TransparentInput{
+        Pubkey:       pubkeyBytes,
+        PrevoutTxid:  txidBytes,
+        PrevoutIndex: 0,
+        Value:        1_000_000,
+        ScriptPubkey: scriptBytes,
+    }
+    
+    // Create payment
+    payment := t2z.Payment{
+        Address: "u1recipient...",
+        Amount:  800_000,
+    }
+    
+    // Propose transaction
+    changeAddr := "u1change..."
+    pczt, err := t2z.ProposeTransaction(
+        []t2z.TransparentInput{input},
+        []t2z.Payment{payment},
+        &changeAddr,
+        "testnet",
+        3720100,
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Sign
+    sighash, _ := t2z.GetSighash(pczt, 0)
+    signature := sign(sighash, privateKey)
+    pczt, _ = t2z.AppendSignature(pczt, 0, pubkeyBytes, signature)
+    
+    // Prove
+    pczt, _ = t2z.ProveTransaction(pczt)
+    
+    // Finalize
+    txBytes, _ := t2z.FinalizeAndExtract(pczt)
+    fmt.Printf("Transaction: %x\n", txBytes)
+}
+```
+
+## Planned Features
+
+- Native Go types (no CGO for basic operations)
+- Error handling via standard Go `error` interface
+- Context support for cancellation
+- Thread-safe proving key caching
+
+## Type Mappings
+
+| TypeScript | Go |
+|------------|-----|
+| `WasmTransparentInput` | `TransparentInput` |
+| `WasmPayment` | `Payment` |
+| `WasmPczt` | `*Pczt` |
+| `bigint` | `uint64` |
+| `string` (hex) | `[]byte` |
+| `null` | `nil` / pointer |
+
+## Building from Source
+
+Until the package is published, you can build from source:
+
+```bash
+# Clone the repository
+git clone https://github.com/d4mr/t2z
+cd t2z
+
+# Build Go bindings
+cd crates/t2z-uniffi
+cargo build --release
+
+# Generate Go code
+uniffi-bindgen-go src/lib.udl --out-dir go/
+
+# Use in your project
+# (copy generated files or use go workspace)
+```
+
+## Get Notified
+
+<Card title="Watch on GitHub" icon="github" href="https://github.com/d4mr/t2z">
+  Star and watch the repository to be notified when the Go SDK is released.
+</Card>
+
+## Interested in Contributing?
+
+The Go SDK is built using [UniFFI](https://mozilla.github.io/uniffi-rs/). Contributions are welcome!
+
+Key files:
+- `crates/t2z-uniffi/src/lib.rs` — UniFFI bindings
+- `crates/t2z-uniffi/src/lib.udl` — Interface definition
+

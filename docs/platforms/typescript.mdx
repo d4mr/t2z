@@ -1,0 +1,258 @@
+---
+title: "TypeScript / JavaScript"
+description: "Use t2z in browsers and Node.js via WebAssembly"
+---
+
+<Badge>Available Now</Badge>
+
+The TypeScript SDK is available as `@d4mr/t2z-wasm` on npm. It works in browsers and Node.js via WebAssembly.
+
+## Installation
+
+```bash
+npm install @d4mr/t2z-wasm
+# or
+pnpm add @d4mr/t2z-wasm
+# or
+yarn add @d4mr/t2z-wasm
+```
+
+## Quick Start
+
+```typescript
+import * as t2z from '@d4mr/t2z-wasm';
+
+// Initialize (sets up panic hooks for better error messages)
+t2z.init();
+
+// Check version
+console.log('t2z version:', t2z.version());
+```
+
+## Browser Setup
+
+For multithreaded WASM support (faster proving), your server must send these headers:
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+### Vite Configuration
+
+```typescript
+// vite.config.ts
+import { defineConfig } from 'vite';
+import wasm from 'vite-plugin-wasm';
+import topLevelAwait from 'vite-plugin-top-level-await';
+
+export default defineConfig({
+  plugins: [wasm(), topLevelAwait()],
+  server: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+  },
+});
+```
+
+### Next.js Configuration
+
+```javascript
+// next.config.js
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
+        ],
+      },
+    ];
+  },
+  webpack: (config) => {
+    config.experiments = { ...config.experiments, asyncWebAssembly: true };
+    return config;
+  },
+};
+```
+
+### Cloudflare Pages
+
+Create `public/_headers`:
+
+```
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+```
+
+## Type Definitions
+
+The package includes TypeScript definitions. Key types:
+
+```typescript
+// Input type
+class WasmTransparentInput {
+  constructor(
+    pubkey: string,           // 33-byte hex
+    prevout_txid: string,     // 32-byte hex (little-endian)
+    prevout_index: number,
+    value: bigint,            // zatoshis
+    script_pubkey: string,    // hex
+    sequence?: number | null
+  );
+}
+
+// Payment type
+class WasmPayment {
+  constructor(
+    address: string,          // Unified or transparent address
+    amount: bigint,           // zatoshis
+    memo?: string | null,     // hex-encoded
+    label?: string | null
+  );
+}
+
+// Expected change output
+class WasmExpectedTxOut {
+  constructor(
+    address: string,
+    amount: bigint
+  );
+}
+
+// PCZT wrapper
+class WasmPczt {
+  static from_hex(hex: string): WasmPczt;
+  to_hex(): string;
+}
+```
+
+## Complete Example
+
+```typescript
+import * as t2z from '@d4mr/t2z-wasm';
+import { secp256k1 } from '@noble/curves/secp256k1';
+
+async function sendToShielded() {
+  // Initialize
+  t2z.init();
+  
+  // Pre-build proving key (optional, for faster proving later)
+  if (!t2z.is_proving_key_ready()) {
+    console.log('Building proving key...');
+    t2z.prebuild_proving_key();
+  }
+  
+  // Prepare input
+  const input = new t2z.WasmTransparentInput(
+    publicKeyHex,
+    prevTxIdLittleEndian,
+    0,
+    1_000_000n,
+    scriptPubkeyHex,
+    null
+  );
+  
+  // Prepare payment
+  const payment = new t2z.WasmPayment(
+    'u1recipient...',
+    800_000n,
+    null,
+    null
+  );
+  
+  // Create PCZT
+  let pczt = t2z.propose_transaction(
+    [input],
+    [payment],
+    'u1change...',
+    'testnet',
+    3720100
+  );
+  
+  // Inspect the PCZT
+  const info = t2z.inspect_pczt(pczt.to_hex());
+  console.log('Fee:', info.implied_fee);
+  
+  // Sign
+  const sighash = t2z.get_sighash(pczt, 0);
+  const sig = secp256k1.sign(hexToBytes(sighash), privateKeyBytes);
+  const derSig = new Uint8Array([...sig.toDERRawBytes(), 0x01]);
+  pczt = t2z.append_signature(pczt, 0, publicKeyHex, bytesToHex(derSig));
+  
+  // Prove
+  pczt = t2z.prove_transaction(pczt);
+  
+  // Finalize
+  const txHex = t2z.finalize_and_extract_hex(pczt);
+  console.log('Transaction:', txHex);
+  
+  return txHex;
+}
+```
+
+## Utilities
+
+### Hex Conversion
+
+```typescript
+function hexToBytes(hex: string): Uint8Array {
+  return new Uint8Array(hex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+```
+
+### Reverse Txid (Explorer → Internal)
+
+```typescript
+function reverseTxid(displayTxid: string): string {
+  return displayTxid.match(/../g)!.reverse().join('');
+}
+```
+
+### Format Zatoshis
+
+```typescript
+function formatZec(zatoshis: bigint): string {
+  const zec = Number(zatoshis) / 100_000_000;
+  return `${zec.toFixed(8)} ZEC`;
+}
+```
+
+## Recommended Libraries
+
+| Library | Purpose |
+|---------|---------|
+| `@noble/curves` | ECDSA signing (secp256k1) |
+| `@noble/hashes` | SHA256, RIPEMD160 |
+| `@scure/base` | Base58 encoding |
+
+```bash
+npm install @noble/curves @noble/hashes @scure/base
+```
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="NPM Package" icon="npm" href="https://www.npmjs.com/package/@d4mr/t2z-wasm">
+    View on npm registry
+  </Card>
+  <Card title="Live Demo" icon="play" href="https://t2z-wasm-demo.d4mr.com">
+    Interactive transaction builder
+  </Card>
+  <Card title="GitHub" icon="github" href="https://github.com/d4mr/t2z">
+    Source code and issues
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Complete function docs
+  </Card>
+</CardGroup>
+

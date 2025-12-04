@@ -1,0 +1,130 @@
+---
+title: "Introduction"
+description: "Build Zcash transactions from transparent inputs to shielded Orchard outputs"
+---
+
+<img
+  className="rounded-lg"
+  src="/images/t2z_hero.png"
+  alt="t2z - portable libraries for transparent → shielded transactions"
+/>
+
+## What is t2z?
+
+**t2z** (transparent-to-z) is a multi-platform library for building Zcash transactions that send from **transparent inputs** to **shielded Orchard outputs**.
+
+It implements the [PCZT (Partially Constructed Zcash Transaction)](https://zips.z.cash/zip-0374) format defined in ZIP 374, enabling:
+
+- **Multi-party transaction construction** — Different parties can contribute inputs, signatures, and proofs
+- **Hardware wallet support** — External signing via `get_sighash` + `append_signature`
+- **Cross-platform** — Available for TypeScript, Go, and Kotlin
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Install and build your first transaction in minutes.
+  </Card>
+  <Card title="Live Demo" icon="play" href="https://t2z-wasm-demo.d4mr.com">
+    Try the interactive transaction builder.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Complete function documentation.
+  </Card>
+  <Card title="GitHub" icon="github" href="https://github.com/d4mr/t2z">
+    View source and contribute.
+  </Card>
+</CardGroup>
+
+## Available SDKs
+
+<CardGroup cols={3}>
+  <Card title="TypeScript" icon="js" href="/platforms/typescript">
+    **@d4mr/t2z-wasm**
+    
+    Browser & Node.js via WebAssembly
+    
+    <Badge>Available</Badge>
+  </Card>
+  <Card title="Go" icon="golang" href="/platforms/golang">
+    **github.com/d4mr/t2z-go**
+    
+    Native Go via CGO/UniFFI
+    
+    <Badge variant="secondary">Coming Soon</Badge>
+  </Card>
+  <Card title="Kotlin" icon="android" href="/platforms/kotlin">
+    **com.d4mr.t2z**
+    
+    Android & JVM via UniFFI
+    
+    <Badge variant="secondary">Coming Soon</Badge>
+  </Card>
+</CardGroup>
+
+## Why t2z?
+
+### 🔐 Privacy Upgrade Path
+
+Enable existing transparent-only Zcash infrastructure to send to shielded addresses without requiring a full wallet implementation.
+
+### 📦 PCZT Format
+
+Full [ZIP 374](https://zips.z.cash/zip-0374) support allows transactions to be constructed across multiple parties, systems, or hardware devices.
+
+### ⚡ No Downloads Required
+
+Unlike Sapling which requires ~50MB proving key downloads, Orchard uses Halo 2 — the proving key is built programmatically on first use (~10 seconds, cached thereafter).
+
+### 🦀 Battle-Tested Core
+
+All SDKs share the same Rust core built on official Zcash libraries (`zcash_primitives`, `orchard`, `pczt`), ensuring consistent behavior across platforms.
+
+## Transaction Flow
+
+A t2z transaction follows this flow:
+
+<Steps>
+  <Step title="Propose">
+    Create a PCZT from transparent inputs and payment outputs.
+  </Step>
+  <Step title="Verify (Optional)">
+    Verify the PCZT matches the original request before signing.
+  </Step>
+  <Step title="Sign">
+    Add signatures for each transparent input.
+  </Step>
+  <Step title="Prove">
+    Generate Orchard zero-knowledge proofs.
+  </Step>
+  <Step title="Finalize">
+    Extract the final transaction bytes for broadcast.
+  </Step>
+</Steps>
+
+<Card title="Learn the Flow" icon="arrow-right" href="/flow/overview">
+  Dive deep into each step of the transaction flow.
+</Card>
+
+## Supported Features
+
+| Feature | Status |
+|---------|--------|
+| Transparent → Orchard | ✅ Supported |
+| Transparent → Transparent | ✅ Supported |
+| Multiple inputs | ✅ Supported |
+| Multiple outputs | ✅ Supported |
+| Memos | ✅ Supported |
+| ZIP 317 fees | ✅ Automatic |
+| External signing | ✅ Supported |
+| Sapling outputs | ❌ Not supported |
+| Orchard inputs | ❌ Not supported |
+
+<Note>
+  t2z is designed specifically for transparent-to-shielded use cases. For full wallet functionality including shielded-to-shielded transactions, see [Zashi](https://electriccoin.co/zashi/) or [Ywallet](https://ywallet.app/).
+</Note>
+
+## Related Specifications
+
+- [ZIP 374](https://zips.z.cash/zip-0374) — Partially Constructed Zcash Transaction Format
+- [ZIP 244](https://zips.z.cash/zip-0244) — Transaction Identifier and Signature Validation
+- [ZIP 317](https://zips.z.cash/zip-0317) — Proportional Transfer Fee Mechanism
+- [ZIP 321](https://zips.z.cash/zip-0321) — Payment Request URIs

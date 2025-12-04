@@ -1,0 +1,141 @@
+---
+title: "API Reference"
+description: "Complete reference for all t2z functions"
+---
+
+This section documents all functions available in the t2z SDKs. The API is consistent across all platforms (TypeScript, Go, Kotlin) with language-appropriate naming conventions.
+
+## Function Overview
+
+### Transaction Construction
+
+| Function | Description |
+|----------|-------------|
+| [`propose_transaction`](/api-reference/propose-transaction) | Create a PCZT from inputs and payments |
+| [`inspect_pczt`](/api-reference/inspect-pczt) | Get detailed info about a PCZT |
+
+### Signing
+
+| Function | Description |
+|----------|-------------|
+| [`get_sighash`](/api-reference/get-sighash) | Get the sighash for external signing |
+| [`append_signature`](/api-reference/append-signature) | Add a signature to the PCZT |
+| [`sign_transparent_input`](/api-reference/sign-transparent-input) | Sign with an in-memory private key |
+
+### Proving & Finalization
+
+| Function | Description |
+|----------|-------------|
+| [`prove_transaction`](/api-reference/prove-transaction) | Generate Orchard proofs |
+| [`verify_before_signing`](/api-reference/verify-before-signing) | Verify PCZT matches request |
+| [`finalize_and_extract`](/api-reference/finalize-and-extract) | Extract final transaction |
+
+### Utilities
+
+| Function | Description |
+|----------|-------------|
+| [`parse_pczt`](/api-reference/parse-serialize) | Parse PCZT from bytes |
+| [`serialize_pczt`](/api-reference/parse-serialize) | Serialize PCZT to bytes |
+| [`prebuild_proving_key`](/api-reference/utilities) | Pre-build the proving key |
+| [`is_proving_key_ready`](/api-reference/utilities) | Check if proving key is cached |
+| [`generate_test_address`](/api-reference/utilities) | Generate test Orchard address |
+| [`generate_test_keypair`](/api-reference/utilities) | Generate test keypair |
+| [`version`](/api-reference/utilities) | Get library version |
+
+## Naming Conventions
+
+The API uses consistent naming across platforms with language-appropriate conventions:
+
+| TypeScript | Go | Kotlin |
+|------------|-----|--------|
+| `propose_transaction` | `ProposeTransaction` | `proposeTransaction` |
+| `get_sighash` | `GetSighash` | `getSighash` |
+| `WasmTransparentInput` | `TransparentInput` | `TransparentInput` |
+
+## Error Handling
+
+<Tabs>
+  <Tab title="TypeScript">
+    Functions throw `Error` on failure:
+    ```typescript
+    try {
+      const pczt = t2z.propose_transaction(...);
+    } catch (err) {
+      console.error('Failed:', err.message);
+    }
+    ```
+  </Tab>
+  <Tab title="Go">
+    Functions return `error`:
+    ```go
+    pczt, err := t2z.ProposeTransaction(...)
+    if err != nil {
+        log.Fatal(err)
+    }
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    Functions throw exceptions:
+    ```kotlin
+    try {
+        val pczt = proposeTransaction(...)
+    } catch (e: T2zException) {
+        println("Failed: ${e.message}")
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Type Reference
+
+### TransparentInput
+
+Represents a transparent UTXO to spend.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pubkey` | bytes (33) | Compressed secp256k1 public key |
+| `prevoutTxid` | bytes (32) | Transaction ID (little-endian) |
+| `prevoutIndex` | uint32 | Output index |
+| `value` | uint64 | Value in zatoshis |
+| `scriptPubkey` | bytes | P2PKH scriptPubkey |
+| `sequence` | uint32? | Sequence number (default: 0xffffffff) |
+
+### Payment
+
+Represents a payment output.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `address` | string | Unified or transparent address |
+| `amount` | uint64 | Amount in zatoshis |
+| `memo` | bytes? | Memo for shielded outputs (max 512 bytes) |
+| `label` | string? | Display label |
+
+### ExpectedTxOut
+
+For verification, represents an expected output.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `address` | string | Expected address |
+| `amount` | uint64 | Expected amount in zatoshis |
+
+### PcztInfo
+
+Result of `inspect_pczt`, contains transaction details.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `expiry_height` | uint32 | Transaction expiry block |
+| `transparent_inputs` | array | Input details |
+| `transparent_outputs` | array | Transparent output details |
+| `orchard_outputs` | array | Orchard output details |
+| `total_input` | uint64 | Sum of input values |
+| `total_transparent_output` | uint64 | Sum of transparent outputs |
+| `total_orchard_output` | uint64 | Sum of Orchard outputs |
+| `implied_fee` | uint64 | Calculated fee |
+| `num_orchard_actions` | uint32 | Number of Orchard actions |
+| `all_inputs_signed` | bool | Whether all inputs have signatures |
+| `has_orchard_proofs` | bool | Whether proofs are present |
+

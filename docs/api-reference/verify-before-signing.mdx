@@ -1,0 +1,82 @@
+---
+title: "verify_before_signing"
+description: "Verify the PCZT matches your original request"
+---
+
+Verifies that a PCZT matches the original transaction request before signing. Important security check when the PCZT was handled by a third party.
+
+## Signature
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    function verify_before_signing(
+      pczt: WasmPczt,
+      payments: WasmPayment[],
+      expected_change: WasmExpectedTxOut[]
+    ): void  // Throws on failure
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func VerifyBeforeSigning(
+      pczt *Pczt,
+      payments []Payment,
+      expectedChange []ExpectedTxOut,
+    ) error
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun verifyBeforeSigning(
+      pczt: Pczt,
+      payments: List<Payment>,
+      expectedChange: List<ExpectedTxOut>
+    )  // Throws on failure
+    ```
+  </Tab>
+</Tabs>
+
+## Parameters
+
+<ResponseField name="pczt" type="Pczt" required>
+  The PCZT to verify
+</ResponseField>
+
+<ResponseField name="payments" type="Payment[]" required>
+  Original payments (same as passed to `propose_transaction`)
+</ResponseField>
+
+<ResponseField name="expected_change" type="ExpectedTxOut[]" required>
+  Expected change outputs
+</ResponseField>
+
+## Example
+
+```typescript
+// Get actual change from PCZT
+const info = t2z.inspect_pczt(pczt.to_hex());
+const paymentTotal = payments.reduce((sum, p) => sum + p.amount, 0n);
+const changeAmount = BigInt(info.total_orchard_output) - paymentTotal;
+
+// Build expected change
+const expectedChange = changeAmount > 0n 
+  ? [new t2z.WasmExpectedTxOut(changeAddress, changeAmount)]
+  : [];
+
+// Verify
+t2z.verify_before_signing(pczt, payments, expectedChange);
+```
+
+## When to Use
+
+- PCZT came from another system
+- Hardware wallet workflow
+- Multi-party transaction construction
+
+May be skipped when you created the PCZT yourself.
+
+## See Also
+
+- [Transaction Flow: Verify](/flow/verify)
+

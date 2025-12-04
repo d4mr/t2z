@@ -1,0 +1,113 @@
+---
+title: "propose_transaction"
+description: "Create a PCZT from transparent inputs and payment outputs"
+---
+
+Creates a Partially Constructed Zcash Transaction (PCZT) from transparent inputs and payment outputs. Implements the Creator, Constructor, and IO Finalizer roles from ZIP 374.
+
+## Signature
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    function propose_transaction(
+      inputs: WasmTransparentInput[],
+      payments: WasmPayment[],
+      change_address: string | null,
+      network: 'mainnet' | 'testnet',
+      expiry_height: number
+    ): WasmPczt
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func ProposeTransaction(
+      inputs []TransparentInput,
+      payments []Payment,
+      changeAddress *string,
+      network string,
+      expiryHeight uint32,
+    ) (*Pczt, error)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun proposeTransaction(
+      inputs: List<TransparentInput>,
+      payments: List<Payment>,
+      changeAddress: String?,
+      network: String,
+      expiryHeight: UInt
+    ): Pczt
+    ```
+  </Tab>
+</Tabs>
+
+## Parameters
+
+<ResponseField name="inputs" type="TransparentInput[]" required>
+  Array of transparent UTXOs to spend
+</ResponseField>
+
+<ResponseField name="payments" type="Payment[]" required>
+  Array of payment outputs to create
+</ResponseField>
+
+<ResponseField name="change_address" type="string | null">
+  Address to receive change (Orchard or transparent)
+</ResponseField>
+
+<ResponseField name="network" type="string" required>
+  `'mainnet'` or `'testnet'`
+</ResponseField>
+
+<ResponseField name="expiry_height" type="number" required>
+  Block height at which the transaction expires
+</ResponseField>
+
+## Returns
+
+A `Pczt` object representing the partially constructed transaction.
+
+## Example
+
+```typescript
+const input = new t2z.WasmTransparentInput(
+  '03abc123...',
+  'ce15f716...1338',
+  0,
+  1_000_000n,
+  '76a914...88ac',
+  null
+);
+
+const payment = new t2z.WasmPayment(
+  'u1recipient...',
+  800_000n,
+  null,
+  null
+);
+
+const pczt = t2z.propose_transaction(
+  [input],
+  [payment],
+  'u1change...',
+  'testnet',
+  3720100
+);
+```
+
+## Errors
+
+| Error | Cause |
+|-------|-------|
+| `InvalidAddress` | Address couldn't be parsed |
+| `InsufficientFunds` | Inputs don't cover payments + fee |
+| `ChangeRequired` | Change exists but no change address provided |
+| `OrchardBuilderNotAvailable` | Expiry height is before Nu5 |
+
+## See Also
+
+- [Transaction Flow: Propose](/flow/propose)
+- [`inspect_pczt`](/api-reference/inspect-pczt)
+

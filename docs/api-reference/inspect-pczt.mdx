@@ -1,0 +1,121 @@
+---
+title: "inspect_pczt"
+description: "Get detailed information about a PCZT's contents"
+---
+
+Inspects a PCZT and returns structured information about its contents, including inputs, outputs, fee, and signing/proving status.
+
+## Signature
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    function inspect_pczt(pczt_hex: string): PcztInfo
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func InspectPczt(pczt *Pczt) (*PcztInfo, error)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun inspectPczt(pczt: Pczt): PcztInfo
+    ```
+  </Tab>
+</Tabs>
+
+## Parameters
+
+<ResponseField name="pczt_hex" type="string" required>
+  Hex-encoded PCZT (TypeScript) or Pczt object (Go/Kotlin)
+</ResponseField>
+
+## Returns
+
+```typescript
+interface PcztInfo {
+  expiry_height: number;
+  
+  transparent_inputs: Array<{
+    prevout_txid: string;     // Hex (display order)
+    prevout_index: number;
+    value: number;            // Zatoshis
+    script_pubkey: string;    // Hex
+    is_signed: boolean;
+    num_signatures: number;
+  }>;
+  
+  transparent_outputs: Array<{
+    value: number;
+    script_pubkey: string;
+    user_address?: string;
+  }>;
+  
+  orchard_outputs: Array<{
+    value?: number;           // Zatoshis (if not redacted)
+    recipient?: string;       // Hex (if not redacted)
+    user_address?: string;
+  }>;
+  
+  total_input: number;
+  total_transparent_output: number;
+  total_orchard_output: number;
+  implied_fee: number;
+  num_orchard_actions: number;
+  all_inputs_signed: boolean;
+  has_orchard_proofs: boolean;
+}
+```
+
+## Example
+
+```typescript
+const pczt = t2z.propose_transaction(inputs, payments, changeAddr, network, expiry);
+const info = t2z.inspect_pczt(pczt.to_hex());
+
+console.log('Transaction Summary:');
+console.log('  Inputs:', info.transparent_inputs.length);
+console.log('  Total In:', info.total_input, 'zatoshis');
+console.log('  Total Out:', info.total_orchard_output + info.total_transparent_output);
+console.log('  Fee:', info.implied_fee, 'zatoshis');
+console.log('  Signed:', info.all_inputs_signed ? 'Yes' : 'No');
+console.log('  Proved:', info.has_orchard_proofs ? 'Yes' : 'No');
+```
+
+## Use Cases
+
+### Calculate Change Amount
+
+```typescript
+const info = t2z.inspect_pczt(pczt.to_hex());
+const paymentTotal = payments.reduce((sum, p) => sum + p.amount, 0n);
+const changeAmount = BigInt(info.total_orchard_output) - paymentTotal;
+```
+
+### Check Signing Progress
+
+```typescript
+const info = t2z.inspect_pczt(pczt.to_hex());
+info.transparent_inputs.forEach((input, i) => {
+  console.log(`Input ${i}: ${input.is_signed ? '✓' : '○'}`);
+});
+```
+
+### Verify Before Finalize
+
+```typescript
+const info = t2z.inspect_pczt(pczt.to_hex());
+if (!info.all_inputs_signed) {
+  throw new Error('Not all inputs signed');
+}
+if (!info.has_orchard_proofs) {
+  throw new Error('Proofs not generated');
+}
+```
+
+## See Also
+
+- [`propose_transaction`](/api-reference/propose-transaction)
+- [Transaction Flow: Verify](/flow/verify)
+

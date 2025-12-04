@@ -1,0 +1,66 @@
+---
+title: "prove_transaction"
+description: "Generate Orchard zero-knowledge proofs"
+---
+
+Generates Halo 2 zero-knowledge proofs for all Orchard actions in the PCZT.
+
+## Signature
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    function prove_transaction(pczt: WasmPczt): WasmPczt
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func ProveTransaction(pczt *Pczt) (*Pczt, error)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun proveTransaction(pczt: Pczt): Pczt
+    ```
+  </Tab>
+</Tabs>
+
+## Parameters
+
+<ResponseField name="pczt" type="Pczt" required>
+  The PCZT to add proofs to
+</ResponseField>
+
+## Returns
+
+Updated PCZT with Orchard proofs.
+
+## Performance
+
+| Operation | First Run | Cached |
+|-----------|-----------|--------|
+| Build proving key | ~10 seconds | N/A |
+| Generate proofs | ~1-2 seconds | ~1-2 seconds |
+
+## Example
+
+```typescript
+// Pre-build proving key (optional, for better UX)
+if (!t2z.is_proving_key_ready()) {
+  t2z.prebuild_proving_key();
+}
+
+// Generate proofs
+const provedPczt = t2z.prove_transaction(pczt);
+
+// Verify proofs were added
+const info = t2z.inspect_pczt(provedPczt.to_hex());
+console.log('Has proofs:', info.has_orchard_proofs);
+```
+
+## See Also
+
+- [`prebuild_proving_key`](/api-reference/utilities)
+- [`is_proving_key_ready`](/api-reference/utilities)
+- [Transaction Flow: Prove](/flow/prove)
+

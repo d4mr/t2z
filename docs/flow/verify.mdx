@@ -1,0 +1,195 @@
+---
+title: "Verify Before Signing"
+description: "Validate the PCZT matches your original transaction request"
+---
+
+The `verify_before_signing` function checks that a PCZT matches your original request. This is a security check to detect malleation if the PCZT was handled by a third party.
+
+<Note>
+  Per ZIP 374: "If the entity that invoked `propose_transaction` is the same as the entity that is adding the signatures, and no third party may have malleated the PCZT before signing, this step may be skipped."
+</Note>
+
+## When to Verify
+
+| Scenario | Should Verify? |
+|----------|----------------|
+| You created and will sign the PCZT | Optional |
+| PCZT came from another system | **Required** |
+| Hardware wallet workflow | **Required** |
+| Multi-party transaction | **Required** |
+
+## Function Signature
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    function verify_before_signing(
+      pczt: WasmPczt,
+      payments: WasmPayment[],
+      expected_change: WasmExpectedTxOut[]
+    ): void  // Throws on failure
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func VerifyBeforeSigning(
+      pczt *Pczt,
+      payments []Payment,
+      expectedChange []ExpectedTxOut,
+    ) error
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun verifyBeforeSigning(
+      pczt: Pczt,
+      payments: List<Payment>,
+      expectedChange: List<ExpectedTxOut>
+    )  // Throws on failure
+    ```
+  </Tab>
+</Tabs>
+
+## Parameters
+
+<ParamField path="pczt" type="Pczt" required>
+  The PCZT to verify
+</ParamField>
+
+<ParamField path="payments" type="Payment[]" required>
+  The original payments you requested (same as passed to `propose_transaction`)
+</ParamField>
+
+<ParamField path="expected_change" type="ExpectedTxOut[]" required>
+  Expected change outputs. Use `inspect_pczt` to get the actual change amount:
+  
+  ```typescript
+  interface ExpectedTxOut {
+    address: string;   // Change address
+    amount: bigint;    // Change amount in zatoshis
+  }
+  ```
+</ParamField>
+
+## Example
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    import * as t2z from '@d4mr/t2z-wasm';
+
+    // Original payments (same as used in propose_transaction)
+    const payments = [
+      new t2z.WasmPayment('u1recipient...', 500_000n, null, null)
+    ];
+
+    // Get the actual change from the PCZT
+    const info = t2z.inspect_pczt(pczt.to_hex());
+    
+    // Calculate change: total_orchard_output - payment_amount
+    const paymentTotal = payments.reduce((sum, p) => sum + p.amount, 0n);
+    const changeAmount = BigInt(info.total_orchard_output) - paymentTotal;
+
+    // Build expected change
+    const expectedChange = changeAmount > 0n 
+      ? [new t2z.WasmExpectedTxOut(changeAddress, changeAmount)]
+      : [];
+
+    // Verify
+    try {
+      t2z.verify_before_signing(pczt, payments, expectedChange);
+      console.log('✓ Verification passed');
+    } catch (err) {
+      console.error('✗ Verification failed:', err.message);
+      // DO NOT SIGN - PCZT may have been tampered with!
+    }
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    // Original payments
+    payments := []t2z.Payment{{
+        Address: "u1recipient...",
+        Amount:  500_000,
+    }}
+
+    // Get actual change from PCZT
+    info, _ := t2z.InspectPczt(pczt)
+    changeAmount := info.TotalOrchardOutput - 500_000
+
+    // Build expected change
+    var expectedChange []t2z.ExpectedTxOut
+    if changeAmount > 0 {
+        expectedChange = []t2z.ExpectedTxOut{{
+            Address: changeAddress,
+            Amount:  changeAmount,
+        }}
+    }
+
+    // Verify
+    err := t2z.VerifyBeforeSigning(pczt, payments, expectedChange)
+    if err != nil {
+        log.Fatal("Verification failed - DO NOT SIGN:", err)
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## What Gets Verified
+
+<Steps>
+  <Step title="Payment Matching">
+    Every payment in your original request must be present in the PCZT with the exact amount and address.
+  </Step>
+  <Step title="Change Verification">
+    If you expect change, it must go to the expected address with the expected amount.
+  </Step>
+  <Step title="No Extra Outputs">
+    The PCZT must not contain any unexpected outputs (malleation check).
+  </Step>
+</Steps>
+
+## Verification Errors
+
+<AccordionGroup>
+  <Accordion title="Payment not found in PCZT">
+    One of your original payments is missing from the PCZT. The PCZT may have been modified.
+  </Accordion>
+  <Accordion title="Unexpected output">
+    The PCZT contains an output that wasn't in your original request. Possible malleation.
+  </Accordion>
+  <Accordion title="Expected change not found">
+    The change output doesn't match expectations (wrong address or amount).
+  </Accordion>
+</AccordionGroup>
+
+## Security Considerations
+
+<Warning>
+  **Never sign a PCZT that fails verification.** A malicious party could have:
+  - Changed the recipient address
+  - Modified the amounts
+  - Added extra outputs to steal funds
+</Warning>
+
+If verification fails:
+1. Do not sign the PCZT
+2. Discard it and create a new one
+3. Investigate how the PCZT was modified
+
+## Skipping Verification
+
+You can skip verification when:
+- You created the PCZT yourself
+- The PCZT never left your control
+- You're in a development/testing environment
+
+```typescript
+// Skip verification (only when safe to do so)
+console.log('Skipping verification (same entity created and will sign)');
+```
+
+## Next Step
+
+After verification passes (or is skipped), proceed to [signing](/flow/sign) the transparent inputs.
+

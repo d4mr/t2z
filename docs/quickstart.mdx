@@ -1,0 +1,217 @@
+---
+title: "Quick Start"
+description: "Install t2z and build your first transaction"
+---
+
+## Installation
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```bash
+    npm install @d4mr/t2z-wasm
+    # or
+    pnpm add @d4mr/t2z-wasm
+    # or
+    yarn add @d4mr/t2z-wasm
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```bash
+    go get github.com/d4mr/t2z-go
+    ```
+    <Note>Go SDK coming soon</Note>
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    // build.gradle.kts
+    dependencies {
+        implementation("com.d4mr:t2z:0.1.0")
+    }
+    ```
+    <Note>Kotlin SDK coming soon</Note>
+  </Tab>
+</Tabs>
+
+## Basic Example
+
+Build a transaction that sends from a transparent input to a shielded Orchard address:
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    import * as t2z from '@d4mr/t2z-wasm';
+
+    // 1. Create the transaction
+    const pczt = t2z.propose_transaction(
+      // Transparent inputs
+      [new t2z.WasmTransparentInput(
+        pubkeyHex,        // 33-byte compressed pubkey
+        prevoutTxid,      // Previous tx ID (little-endian)
+        0,                // Output index
+        1000000n,         // Value: 0.01 ZEC in zatoshis
+        scriptPubkey,     // P2PKH script
+        null              // Sequence (default: 0xffffffff)
+      )],
+      // Payments
+      [new t2z.WasmPayment(
+        'u1...',          // Unified address with Orchard
+        900000n,          // Amount in zatoshis
+        null,             // Optional memo (hex)
+        null              // Optional label
+      )],
+      'u1...',            // Change address
+      'testnet',          // 'mainnet' or 'testnet'
+      3720100             // Expiry height
+    );
+
+    // 2. Sign transparent inputs
+    const sighash = t2z.get_sighash(pczt, 0);
+    // Sign with your key (external signer, hardware wallet, etc.)
+    const signature = sign(sighash, privateKey);
+    pczt = t2z.append_signature(pczt, 0, pubkeyHex, signature);
+
+    // 3. Generate Orchard proofs
+    pczt = t2z.prove_transaction(pczt);
+
+    // 4. Finalize and get raw transaction
+    const txHex = t2z.finalize_and_extract_hex(pczt);
+
+    // 5. Broadcast to network
+    await broadcastTransaction(txHex);
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    package main
+
+    import (
+        "github.com/d4mr/t2z-go"
+    )
+
+    func main() {
+        // 1. Create the transaction
+        pczt, err := t2z.ProposeTransaction(
+            []t2z.TransparentInput{{
+                Pubkey:       pubkey,
+                PrevoutTxid:  txid,
+                PrevoutIndex: 0,
+                Value:        1000000,
+                ScriptPubkey: script,
+            }},
+            []t2z.Payment{{
+                Address: "u1...",
+                Amount:  900000,
+            }},
+            "u1...",     // Change address
+            "testnet",   // Network
+            3720100,     // Expiry height
+        )
+        
+        // 2. Sign transparent inputs
+        sighash, _ := t2z.GetSighash(pczt, 0)
+        signature := sign(sighash, privateKey)
+        pczt, _ = t2z.AppendSignature(pczt, 0, pubkey, signature)
+        
+        // 3. Generate Orchard proofs
+        pczt, _ = t2z.ProveTransaction(pczt)
+        
+        // 4. Finalize
+        txBytes, _ := t2z.FinalizeAndExtract(pczt)
+        
+        // 5. Broadcast
+        broadcastTransaction(txBytes)
+    }
+    ```
+    <Note>Go SDK coming soon</Note>
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    import com.d4mr.t2z.*
+
+    fun main() {
+        // 1. Create the transaction
+        val pczt = proposeTransaction(
+            inputs = listOf(
+                TransparentInput(
+                    pubkey = pubkey,
+                    prevoutTxid = txid,
+                    prevoutIndex = 0u,
+                    value = 1_000_000uL,
+                    scriptPubkey = script
+                )
+            ),
+            payments = listOf(
+                Payment(
+                    address = "u1...",
+                    amount = 900_000uL
+                )
+            ),
+            changeAddress = "u1...",
+            network = "testnet",
+            expiryHeight = 3720100u
+        )
+        
+        // 2. Sign transparent inputs
+        val sighash = getSighash(pczt, 0u)
+        val signature = sign(sighash, privateKey)
+        pczt = appendSignature(pczt, 0u, pubkey, signature)
+        
+        // 3. Generate Orchard proofs
+        pczt = proveTransaction(pczt)
+        
+        // 4. Finalize
+        val txHex = finalizeAndExtractHex(pczt)
+        
+        // 5. Broadcast
+        broadcastTransaction(txHex)
+    }
+    ```
+    <Note>Kotlin SDK coming soon</Note>
+  </Tab>
+</Tabs>
+
+## Key Concepts
+
+<AccordionGroup>
+  <Accordion title="What is a PCZT?">
+    A **Partially Constructed Zcash Transaction** (PCZT) is a standardized format for building Zcash transactions incrementally. It allows different parties to add inputs, signatures, and proofs without needing access to all private keys.
+    
+    [Learn more about PCZT →](/concepts#pczt)
+  </Accordion>
+  
+  <Accordion title="Why little-endian for txids?">
+    Block explorers display transaction IDs in **big-endian** (human-readable) format, but Zcash internally uses **little-endian**. When using a txid from an explorer, you need to reverse the bytes.
+    
+    ```typescript
+    // Explorer shows: abcd1234...
+    // Internal format: ...3412cdab
+    const internalTxid = explorerTxid.match(/../g).reverse().join('');
+    ```
+  </Accordion>
+  
+  <Accordion title="What's the expiry height?">
+    Every Zcash transaction has an expiry height - the block height after which the transaction is no longer valid. You should set this to `currentBlockHeight + 40` or more to avoid "tx-expiring-soon" errors.
+    
+    ```typescript
+    const currentHeight = await fetchCurrentBlockHeight();
+    const expiryHeight = currentHeight + 100; // ~2.5 hour buffer
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Understand the Flow" icon="diagram-project" href="/flow/overview">
+    Learn each step of the transaction process in detail.
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts">
+    Deep dive into PCZT, Orchard, and Zcash fundamentals.
+  </Card>
+  <Card title="Try the Demo" icon="play" href="https://t2z-wasm-demo.d4mr.com">
+    Build a transaction interactively in your browser.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Complete function documentation.
+  </Card>
+</CardGroup>

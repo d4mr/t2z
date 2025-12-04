@@ -1,0 +1,146 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "t2z",
+  "colors": {
+    "primary": "#F59E0B",
+    "light": "#FBBF24",
+    "dark": "#D97706"
+  },
+  "favicon": "/favicon.png",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "index",
+              "quickstart",
+              "concepts"
+            ]
+          },
+          {
+            "group": "Transaction Flow",
+            "pages": [
+              "flow/overview",
+              "flow/propose",
+              "flow/verify",
+              "flow/sign",
+              "flow/prove",
+              "flow/finalize"
+            ]
+          },
+          {
+            "group": "Platform Guides",
+            "pages": [
+              "platforms/typescript",
+              "platforms/golang",
+              "platforms/kotlin"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "guides/external-signing",
+              "guides/error-handling",
+              "guides/fee-calculation"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api-reference/index"
+            ]
+          },
+          {
+            "group": "Transaction Construction",
+            "pages": [
+              "api-reference/propose-transaction",
+              "api-reference/inspect-pczt"
+            ]
+          },
+          {
+            "group": "Signing",
+            "pages": [
+              "api-reference/get-sighash",
+              "api-reference/append-signature",
+              "api-reference/sign-transparent-input"
+            ]
+          },
+          {
+            "group": "Proving & Finalization",
+            "pages": [
+              "api-reference/prove-transaction",
+              "api-reference/verify-before-signing",
+              "api-reference/finalize-and-extract"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api-reference/parse-serialize",
+              "api-reference/utilities"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "Demo",
+          "href": "https://t2z-wasm-demo.d4mr.com",
+          "icon": "play"
+        },
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/d4mr/t2z",
+          "icon": "github"
+        }
+      ]
+    }
+  },
+  "logo": {
+    "light": "/logo/light.png",
+    "dark": "/logo/dark.png"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "ZIP 374",
+        "href": "https://zips.z.cash/zip-0374"
+      }
+    ],
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/d4mr/t2z"
+    }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "chatgpt",
+      "claude",
+      "cursor"
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/d4mr/t2z"
+    }
+  },
+  "seo": {
+    "indexHiddenPages": false
+  },
+  "metadata": {
+    "og:site_name": "t2z Documentation",
+    "og:image": "https://t2z.d4mr.com/images/t2z_hero.png"
+  }
+}

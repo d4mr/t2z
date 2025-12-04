@@ -1,0 +1,205 @@
+---
+title: "Kotlin / Java"
+description: "Use t2z on Android and JVM via UniFFI"
+---
+
+<Badge variant="secondary">Coming Soon</Badge>
+
+The Kotlin SDK will be available as `com.d4mr:t2z` on Maven Central. It uses UniFFI bindings to the Rust core and works on Android and JVM.
+
+## Planned Installation
+
+### Gradle (Kotlin DSL)
+
+```kotlin
+// build.gradle.kts
+dependencies {
+    implementation("com.d4mr:t2z:0.1.0")
+}
+```
+
+### Gradle (Groovy)
+
+```groovy
+// build.gradle
+dependencies {
+    implementation 'com.d4mr:t2z:0.1.0'
+}
+```
+
+### Maven
+
+```xml
+<dependency>
+    <groupId>com.d4mr</groupId>
+    <artifactId>t2z</artifactId>
+    <version>0.1.0</version>
+</dependency>
+```
+
+## Planned API
+
+The Kotlin API will mirror the TypeScript API with Kotlin idioms:
+
+```kotlin
+import com.d4mr.t2z.*
+
+fun main() {
+    // Create input
+    val input = TransparentInput(
+        pubkey = pubkeyBytes,
+        prevoutTxid = txidBytes,
+        prevoutIndex = 0u,
+        value = 1_000_000uL,
+        scriptPubkey = scriptBytes
+    )
+    
+    // Create payment
+    val payment = Payment(
+        address = "u1recipient...",
+        amount = 800_000uL,
+        memo = null,
+        label = null
+    )
+    
+    // Propose transaction
+    var pczt = proposeTransaction(
+        inputs = listOf(input),
+        payments = listOf(payment),
+        changeAddress = "u1change...",
+        network = "testnet",
+        expiryHeight = 3720100u
+    )
+    
+    // Sign
+    val sighash = getSighash(pczt, 0u)
+    val signature = sign(sighash, privateKey)
+    pczt = appendSignature(pczt, 0u, pubkeyBytes, signature)
+    
+    // Prove
+    pczt = proveTransaction(pczt)
+    
+    // Finalize
+    val txHex = finalizeAndExtractHex(pczt)
+    println("Transaction: $txHex")
+}
+```
+
+## Android Considerations
+
+### Native Library Loading
+
+The SDK includes native libraries for:
+- `arm64-v8a`
+- `armeabi-v7a`
+- `x86_64`
+- `x86`
+
+```kotlin
+// Libraries are loaded automatically, but you can verify:
+try {
+    System.loadLibrary("t2z_uniffi")
+    println("t2z native library loaded")
+} catch (e: UnsatisfiedLinkError) {
+    println("Failed to load t2z: ${e.message}")
+}
+```
+
+### ProGuard / R8
+
+Add to your `proguard-rules.pro`:
+
+```proguard
+-keep class com.d4mr.t2z.** { *; }
+-keepclassmembers class com.d4mr.t2z.** { *; }
+```
+
+### Minimum SDK
+
+- Minimum SDK: 21 (Android 5.0)
+- Target SDK: 34
+
+## Java Interop
+
+The SDK is fully usable from Java:
+
+```java
+import com.d4mr.t2z.*;
+import java.util.List;
+
+public class Example {
+    public static void main(String[] args) {
+        TransparentInput input = new TransparentInput(
+            pubkeyBytes,
+            txidBytes,
+            0,
+            1_000_000L,
+            scriptBytes,
+            null
+        );
+        
+        Payment payment = new Payment(
+            "u1recipient...",
+            800_000L,
+            null,
+            null
+        );
+        
+        Pczt pczt = T2z.proposeTransaction(
+            List.of(input),
+            List.of(payment),
+            "u1change...",
+            "testnet",
+            3720100
+        );
+        
+        // ... sign, prove, finalize
+    }
+}
+```
+
+## Type Mappings
+
+| TypeScript | Kotlin | Java |
+|------------|--------|------|
+| `WasmTransparentInput` | `TransparentInput` | `TransparentInput` |
+| `WasmPayment` | `Payment` | `Payment` |
+| `WasmPczt` | `Pczt` | `Pczt` |
+| `bigint` | `ULong` | `long` |
+| `string` (hex) | `ByteArray` | `byte[]` |
+| `null` | `null` | `null` |
+
+## Building from Source
+
+Until the package is published, you can build from source:
+
+```bash
+# Clone the repository
+git clone https://github.com/d4mr/t2z
+cd t2z
+
+# Build Kotlin bindings
+cd crates/t2z-uniffi
+cargo build --release
+
+# Generate Kotlin code
+uniffi-bindgen-kotlin src/lib.udl --out-dir kotlin/
+
+# Build AAR for Android
+./gradlew assembleRelease
+```
+
+## Get Notified
+
+<Card title="Watch on GitHub" icon="github" href="https://github.com/d4mr/t2z">
+  Star and watch the repository to be notified when the Kotlin SDK is released.
+</Card>
+
+## Interested in Contributing?
+
+The Kotlin SDK is built using [UniFFI](https://mozilla.github.io/uniffi-rs/). Contributions are welcome!
+
+Key files:
+- `crates/t2z-uniffi/src/lib.rs` — UniFFI bindings
+- `crates/t2z-uniffi/src/lib.udl` — Interface definition
+

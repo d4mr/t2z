@@ -1,0 +1,233 @@
+---
+title: "Finalize & Extract"
+description: "Complete the transaction and extract raw bytes for broadcast"
+---
+
+The `finalize_and_extract` function performs final validation and produces the raw transaction bytes ready to broadcast to the Zcash network.
+
+## Prerequisites
+
+Before finalization, ensure:
+- ✅ All transparent inputs are signed
+- ✅ All Orchard proofs are generated
+
+```typescript
+const info = t2z.inspect_pczt(pczt.to_hex());
+
+if (!info.all_inputs_signed) {
+  throw new Error('Not all inputs signed');
+}
+if (!info.has_orchard_proofs) {
+  throw new Error('Orchard proofs not generated');
+}
+```
+
+## Function Signature
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    // Get raw bytes
+    function finalize_and_extract(pczt: WasmPczt): Uint8Array
+    
+    // Get hex string (convenient for broadcasting)
+    function finalize_and_extract_hex(pczt: WasmPczt): string
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    func FinalizeAndExtract(pczt *Pczt) ([]byte, error)
+    func FinalizeAndExtractHex(pczt *Pczt) (string, error)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    fun finalizeAndExtract(pczt: Pczt): ByteArray
+    fun finalizeAndExtractHex(pczt: Pczt): String
+    ```
+  </Tab>
+</Tabs>
+
+## Basic Usage
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    // Get transaction as hex (most common)
+    const txHex = t2z.finalize_and_extract_hex(pczt);
+    console.log('Transaction ready:', txHex.length / 2, 'bytes');
+    
+    // Or get raw bytes
+    const txBytes = t2z.finalize_and_extract(pczt);
+    ```
+  </Tab>
+  <Tab title="Go">
+    ```go
+    txHex, err := t2z.FinalizeAndExtractHex(pczt)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("Transaction ready: %d bytes\n", len(txHex)/2)
+    ```
+  </Tab>
+  <Tab title="Kotlin">
+    ```kotlin
+    val txHex = finalizeAndExtractHex(pczt)
+    println("Transaction ready: ${txHex.length / 2} bytes")
+    ```
+  </Tab>
+</Tabs>
+
+## What Happens During Finalization
+
+<Steps>
+  <Step title="Spend Finalizer">
+    Assembles final script signatures from partial signatures.
+  </Step>
+  <Step title="Validation">
+    Verifies all required data is present and valid.
+  </Step>
+  <Step title="Transaction Extractor">
+    Converts the PCZT into a raw Zcash transaction.
+  </Step>
+  <Step title="Serialization">
+    Produces the final byte representation.
+  </Step>
+</Steps>
+
+## Broadcasting the Transaction
+
+After extraction, broadcast the transaction to the Zcash network:
+
+### Using zcash-cli
+
+```bash
+zcash-cli sendrawtransaction "0500000..."
+```
+
+### Using lightwalletd
+
+```typescript
+// gRPC to lightwalletd
+const response = await lightwalletClient.sendTransaction({
+  data: hexToBytes(txHex)
+});
+console.log('Txid:', response.txid);
+```
+
+### Using a Block Explorer
+
+Many block explorers provide a "Broadcast" or "Push TX" feature where you can paste the raw transaction hex.
+
+### Using JSON-RPC
+
+```typescript
+const response = await fetch('https://zcash-rpc.example.com', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'sendrawtransaction',
+    params: [txHex],
+    id: 1
+  })
+});
+```
+
+## Complete Example
+
+```typescript
+import * as t2z from '@d4mr/t2z-wasm';
+
+async function buildAndBroadcast() {
+  // 1. Create PCZT
+  let pczt = t2z.propose_transaction(inputs, payments, changeAddr, network, expiry);
+  
+  // 2. Sign all inputs
+  for (let i = 0; i < inputs.length; i++) {
+    const sighash = t2z.get_sighash(pczt, i);
+    const sig = await sign(sighash, keys[i]);
+    pczt = t2z.append_signature(pczt, i, pubkeys[i], sig);
+  }
+  
+  // 3. Generate proofs
+  pczt = t2z.prove_transaction(pczt);
+  
+  // 4. Finalize
+  const txHex = t2z.finalize_and_extract_hex(pczt);
+  
+  // 5. Broadcast
+  const txid = await broadcast(txHex);
+  console.log('Transaction broadcast:', txid);
+  
+  return txid;
+}
+```
+
+## Transaction Structure
+
+The extracted transaction follows the v5 transaction format:
+
+| Field | Description |
+|-------|-------------|
+| Header | Version, version group ID |
+| Transparent | Inputs with signatures, outputs |
+| Sapling | (empty in t2z transactions) |
+| Orchard | Actions with proofs, binding signature |
+| Expiry | Block height expiry |
+
+Typical sizes:
+- 1 input → 1 Orchard output: ~2.5 KB
+- 1 input → 2 Orchard outputs: ~5 KB
+
+## Common Errors
+
+<AccordionGroup>
+  <Accordion title="Missing signatures">
+    Not all transparent inputs have been signed. Use `inspect_pczt` to check which inputs need signing.
+    
+    ```typescript
+    const info = t2z.inspect_pczt(pczt.to_hex());
+    info.transparent_inputs.forEach((input, i) => {
+      if (!input.is_signed) {
+        console.log(`Input ${i} needs signature`);
+      }
+    });
+    ```
+  </Accordion>
+  
+  <Accordion title="Missing proofs">
+    Orchard proofs haven't been generated. Call `prove_transaction` first.
+  </Accordion>
+  
+  <Accordion title="Spend finalizer error">
+    The PCZT couldn't be finalized. This usually means something is inconsistent — try rebuilding from scratch.
+  </Accordion>
+</AccordionGroup>
+
+## After Broadcasting
+
+After a successful broadcast:
+
+1. **Get the txid** — Most broadcast methods return the transaction ID
+2. **Wait for confirmation** — Monitor for inclusion in a block
+3. **Verify in explorer** — Check the transaction on a block explorer
+
+<Tip>
+  The recipient can view incoming shielded funds using their **full viewing key** (not spending key). For Orchard, viewing keys are encoded as `uview1...` (mainnet) or `uviewtest1...` (testnet).
+</Tip>
+
+## 🎉 Congratulations!
+
+You've completed the full t2z transaction flow:
+
+1. ✅ Proposed the transaction
+2. ✅ Verified (optional)
+3. ✅ Signed all inputs
+4. ✅ Generated proofs
+5. ✅ Finalized and broadcast
+
+<Card title="Try the Demo" icon="play" href="https://t2z-wasm-demo.d4mr.com">
+  See this entire flow in action with the interactive demo.
+</Card>
+
