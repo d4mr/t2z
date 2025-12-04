@@ -29,7 +29,7 @@
 | Platform | Package | Status |
 |----------|---------|--------|
 | **TypeScript** | [`@d4mr/t2z-wasm`](https://www.npmjs.com/package/@d4mr/t2z-wasm) | ✅ Available |
-| **Go** | `github.com/d4mr/t2z-go` | 🚧 Coming Soon |
+| **Go** | `github.com/d4mr/t2z/sdks/go` | ✅ Available (build from source) |
 | **Kotlin** | `com.d4mr:t2z` | 🚧 Coming Soon |
 
 ## 🚀 Quick Start
@@ -103,7 +103,7 @@ t2z/
 ├── crates/
 │   ├── t2z-core/        # Core Rust library
 │   ├── t2z-wasm/        # WebAssembly bindings
-│   └── t2z-uniffi/      # Go/Kotlin bindings (coming soon)
+│   └── t2z-uniffi/      # Go/Kotlin bindings (UniFFI)
 ├── demo/                # Interactive demo (React + Vite)
 └── docs/                # Documentation (Mintlify)
 ```

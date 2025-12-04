@@ -3,19 +3,37 @@ title: "Go"
 description: "Use t2z in Go applications via UniFFI"
 ---
 
-<Badge variant="secondary">Coming Soon</Badge>
+<Badge variant="success">Available</Badge>
 
-The Go SDK will be available as `github.com/d4mr/t2z-go`. It uses UniFFI bindings to the Rust core.
+The Go SDK is available at `github.com/d4mr/t2z/sdks/go`. It uses [UniFFI](https://mozilla.github.io/uniffi-rs/) bindings to the Rust core.
 
-## Planned Installation
+## Installation
+
+Since the Go SDK requires the native `libt2z_uniffi` library, you need to build from source:
 
 ```bash
-go get github.com/d4mr/t2z-go
+# Clone the repository
+git clone https://github.com/d4mr/t2z
+cd t2z/crates
+
+# Build the UniFFI library
+cargo build --release -p t2z-uniffi
+
+# macOS: target/release/libt2z_uniffi.dylib
+# Linux: target/release/libt2z_uniffi.so
 ```
 
-## Planned API
+Set the library path:
 
-The Go API will mirror the TypeScript API with Go idioms:
+```bash
+# macOS
+export DYLD_LIBRARY_PATH=/path/to/t2z/crates/target/release:$DYLD_LIBRARY_PATH
+
+# Linux
+export LD_LIBRARY_PATH=/path/to/t2z/crates/target/release:$LD_LIBRARY_PATH
+```
+
+## Quick Start
 
 ```go
 package main
@@ -24,30 +42,37 @@ import (
     "fmt"
     "log"
     
-    t2z "github.com/d4mr/t2z-go"
+    t2z "github.com/d4mr/t2z/sdks/go/t2z_uniffi"
 )
 
 func main() {
-    // Create input
-    input := t2z.TransparentInput{
-        Pubkey:       pubkeyBytes,
-        PrevoutTxid:  txidBytes,
+    // 1. Create transparent input
+    input := t2z.UniffiTransparentInput{
+        Pubkey:       "03abc123...",  // 33-byte compressed pubkey (hex)
+        PrevoutTxid:  "ce15f716...",  // 32-byte txid (little-endian hex)
         PrevoutIndex: 0,
-        Value:        1_000_000,
-        ScriptPubkey: scriptBytes,
+        Value:        1_000_000,      // 0.01 ZEC in zatoshis
+        ScriptPubkey: "76a914...88ac", // P2PKH script (hex)
+        Sequence:     nil,
     }
-    
-    // Create payment
-    payment := t2z.Payment{
-        Address: "u1recipient...",
-        Amount:  800_000,
+
+    // 2. Create payment
+    payment := t2z.UniffiPayment{
+        Address: "u1recipient...", // Unified address with Orchard
+        Amount:  900_000,
+        Memo:    nil,
+        Label:   nil,
     }
-    
-    // Propose transaction
+
+    request := t2z.UniffiTransactionRequest{
+        Payments: []t2z.UniffiPayment{payment},
+    }
+
+    // 3. Propose transaction
     changeAddr := "u1change..."
     pczt, err := t2z.ProposeTransaction(
-        []t2z.TransparentInput{input},
-        []t2z.Payment{payment},
+        []t2z.UniffiTransparentInput{input},
+        request,
         &changeAddr,
         "testnet",
         3720100,
@@ -55,70 +80,180 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
+
+    // 4. Sign transparent inputs (external signing)
+    sighash, err := t2z.GetSighash(pczt, 0)
+    if err != nil {
+        log.Fatal(err)
+    }
     
-    // Sign
-    sighash, _ := t2z.GetSighash(pczt, 0)
-    signature := sign(sighash, privateKey)
-    pczt, _ = t2z.AppendSignature(pczt, 0, pubkeyBytes, signature)
+    // Sign the sighash with your key (ECDSA secp256k1)
+    signature := sign(sighash, privateKey) // Your signing logic
     
-    // Prove
-    pczt, _ = t2z.ProveTransaction(pczt)
-    
-    // Finalize
-    txBytes, _ := t2z.FinalizeAndExtract(pczt)
-    fmt.Printf("Transaction: %x\n", txBytes)
+    pczt, err = t2z.AppendSignature(pczt, 0, pubkeyHex, signature)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // 5. Generate Orchard proofs (~10 seconds first time)
+    pczt, err = t2z.ProveTransaction(pczt)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // 6. Finalize and get raw transaction
+    txHex, err := t2z.FinalizeAndExtractHex(pczt)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Println("Transaction ready:", txHex)
 }
 ```
 
-## Planned Features
+## API Reference
 
-- Native Go types (no CGO for basic operations)
-- Error handling via standard Go `error` interface
-- Context support for cancellation
-- Thread-safe proving key caching
+### Transaction Construction
+
+| Function | Description |
+|----------|-------------|
+| `ProposeTransaction` | Create a PCZT from inputs and payments |
+| `VerifyBeforeSigning` | Verify PCZT matches original request |
+
+### Signing
+
+| Function | Description |
+|----------|-------------|
+| `GetSighash` | Get sighash for external signing |
+| `AppendSignature` | Add a pre-computed signature |
+| `SignTransparentInput` | Sign with in-memory private key |
+
+### Proving & Finalization
+
+| Function | Description |
+|----------|-------------|
+| `ProveTransaction` | Generate Orchard ZK proofs |
+| `FinalizeAndExtract` | Extract final transaction bytes |
+| `FinalizeAndExtractHex` | Extract as hex string |
+| `CombinePczts` | Combine multiple PCZTs |
+
+### Utilities
+
+| Function | Description |
+|----------|-------------|
+| `PrebuildProvingKey` | Pre-build proving key at startup |
+| `IsProvingKeyReady` | Check if proving key is cached |
+| `Version` | Get library version |
+
+## Types
+
+### UniffiTransparentInput
+
+```go
+type UniffiTransparentInput struct {
+    Pubkey       string   // 33-byte compressed pubkey (hex)
+    PrevoutTxid  string   // 32-byte txid (little-endian hex)
+    PrevoutIndex uint32   // Output index
+    Value        uint64   // Value in zatoshis
+    ScriptPubkey string   // P2PKH scriptPubkey (hex)
+    Sequence     *uint32  // Optional sequence number
+}
+```
+
+### UniffiPayment
+
+```go
+type UniffiPayment struct {
+    Address string   // Unified or transparent address
+    Amount  uint64   // Amount in zatoshis
+    Memo    *string  // Optional memo (hex-encoded)
+    Label   *string  // Optional label
+}
+```
+
+### UniffiExpectedTxOut
+
+```go
+type UniffiExpectedTxOut struct {
+    Address string  // Expected address
+    Amount  uint64  // Expected amount (0 = wildcard)
+}
+```
+
+### UniffiPczt
+
+```go
+// Create from bytes or hex
+pczt, err := t2z.NewUniffiPcztFromBytes(bytes)
+pczt, err := t2z.NewUniffiPcztFromHex(hexString)
+
+// Serialize
+bytes := pczt.ToBytes()
+hexStr := pczt.ToHex()
+```
+
+## Error Handling
+
+All functions return Go-style errors:
+
+```go
+pczt, err := t2z.ProposeTransaction(inputs, request, &changeAddr, network, expiry)
+if err != nil {
+    // UniffiError with detailed message
+    log.Printf("Failed to propose: %v", err)
+    return
+}
+```
+
+## Performance Tips
+
+### Pre-build Proving Key
+
+The first proof generation takes ~10 seconds. Pre-build at startup:
+
+```go
+func init() {
+    if !t2z.IsProvingKeyReady() {
+        log.Println("Building Orchard proving key...")
+        t2z.PrebuildProvingKey()
+        log.Println("Proving key ready")
+    }
+}
+```
 
 ## Type Mappings
 
 | TypeScript | Go |
 |------------|-----|
-| `WasmTransparentInput` | `TransparentInput` |
-| `WasmPayment` | `Payment` |
-| `WasmPczt` | `*Pczt` |
+| `WasmTransparentInput` | `UniffiTransparentInput` |
+| `WasmPayment` | `UniffiPayment` |
+| `WasmPczt` | `*UniffiPczt` |
 | `bigint` | `uint64` |
-| `string` (hex) | `[]byte` |
+| `string` (hex) | `string` (hex) |
 | `null` | `nil` / pointer |
 
 ## Building from Source
 
-Until the package is published, you can build from source:
-
 ```bash
 # Clone the repository
 git clone https://github.com/d4mr/t2z
-cd t2z
+cd t2z/crates
 
-# Build Go bindings
-cd crates/t2z-uniffi
-cargo build --release
+# Build the UniFFI library
+cargo build --release -p t2z-uniffi
 
-# Generate Go code
-uniffi-bindgen-go src/lib.udl --out-dir go/
+# Regenerate Go bindings (requires uniffi-bindgen-go)
+cargo install uniffi-bindgen-go \
+  --git https://github.com/NordSecurity/uniffi-bindgen-go \
+  --tag v0.4.0+v0.28.3
 
-# Use in your project
-# (copy generated files or use go workspace)
+uniffi-bindgen-go \
+  --library target/release/libt2z_uniffi.dylib \
+  --out-dir ../sdks/go
 ```
 
-## Get Notified
+## Related
 
-<Card title="Watch on GitHub" icon="github" href="https://github.com/d4mr/t2z">
-  Star and watch the repository to be notified when the Go SDK is released.
-</Card>
-
-## Interested in Contributing?
-
-The Go SDK is built using [UniFFI](https://mozilla.github.io/uniffi-rs/). Contributions are welcome!
-
-Key files:
-- `crates/t2z-uniffi/src/lib.rs` — UniFFI bindings
-- `crates/t2z-uniffi/src/lib.udl` — Interface definition
-
+- [t2z Documentation](https://t2z.d4mr.com)
+- [ZIP 374: PCZT Specification](https://github.com/zcash/zips/pull/1063)
+- [NordSecurity/uniffi-bindgen-go](https://github.com/NordSecurity/uniffi-bindgen-go)

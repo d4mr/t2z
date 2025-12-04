@@ -1,8 +1,3 @@
-module github.com/d4mr/pczt
+module github.com/d4mr/t2z/sdks/go
 
 go 1.21
-
-require (
-    // Add dependencies here after generating UniFFI bindings
-)
-
