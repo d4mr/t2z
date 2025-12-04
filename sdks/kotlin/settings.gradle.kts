@@ -1,2 +1,1 @@
-rootProject.name = "pczt-kotlin"
-
+rootProject.name = "t2z-kotlin"

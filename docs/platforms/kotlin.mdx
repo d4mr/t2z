@@ -3,105 +3,218 @@ title: "Kotlin / Java"
 description: "Use t2z on Android and JVM via UniFFI"
 ---
 
-<Badge variant="secondary">Coming Soon</Badge>
+<Badge variant="success">Available</Badge>
 
-The Kotlin SDK will be available as `com.d4mr:t2z` on Maven Central. It uses UniFFI bindings to the Rust core and works on Android and JVM.
+The Kotlin SDK is available at `github.com/d4mr/t2z/sdks/kotlin`. It uses [UniFFI](https://mozilla.github.io/uniffi-rs/) bindings to the Rust core and works on Android and JVM.
 
-## Planned Installation
+## Prerequisites
 
-### Gradle (Kotlin DSL)
+- **Java 11+** (JDK)
+- **Rust** (nightly toolchain)
+
+## Installation
+
+Since the Kotlin SDK requires the native `libt2z_uniffi` library, you need to build from source:
+
+```bash
+# Clone the repository
+git clone https://github.com/d4mr/t2z
+cd t2z/sdks/kotlin
+
+# Build the native library and generate Kotlin bindings
+./scripts/build.sh
+
+# Run tests to verify (requires Java)
+./scripts/test.sh
+```
+
+### Gradle Dependency
+
+Add JNA dependency to your project:
 
 ```kotlin
-// build.gradle.kts
 dependencies {
-    implementation("com.d4mr:t2z:0.1.0")
+    implementation("net.java.dev.jna:jna:5.14.0")
 }
 ```
 
-### Gradle (Groovy)
+Copy the generated source files from `src/main/kotlin/uniffi/t2z_uniffi/` to your project.
 
-```groovy
-// build.gradle
-dependencies {
-    implementation 'com.d4mr:t2z:0.1.0'
-}
-```
-
-### Maven
-
-```xml
-<dependency>
-    <groupId>com.d4mr</groupId>
-    <artifactId>t2z</artifactId>
-    <version>0.1.0</version>
-</dependency>
-```
-
-## Planned API
-
-The Kotlin API will mirror the TypeScript API with Kotlin idioms:
+## Quick Start
 
 ```kotlin
-import com.d4mr.t2z.*
+import uniffi.t2z_uniffi.*
 
 fun main() {
-    // Create input
-    val input = TransparentInput(
-        pubkey = pubkeyBytes,
-        prevoutTxid = txidBytes,
+    // 1. Create transparent input
+    val input = UniffiTransparentInput(
+        pubkey = "03abc123...",      // 33-byte compressed pubkey (hex)
+        prevoutTxid = "ce15f716...", // 32-byte txid (little-endian hex)
         prevoutIndex = 0u,
-        value = 1_000_000uL,
-        scriptPubkey = scriptBytes
+        value = 1_000_000uL,         // 0.01 ZEC in zatoshis
+        scriptPubkey = "76a914...88ac", // P2PKH script (hex)
+        sequence = null
     )
-    
-    // Create payment
-    val payment = Payment(
-        address = "u1recipient...",
-        amount = 800_000uL,
+
+    // 2. Create payment
+    val payment = UniffiPayment(
+        address = "u1recipient...", // Unified address with Orchard
+        amount = 900_000uL,
         memo = null,
         label = null
     )
-    
-    // Propose transaction
+
+    val request = UniffiTransactionRequest(
+        payments = listOf(payment)
+    )
+
+    // 3. Propose transaction
     var pczt = proposeTransaction(
-        inputs = listOf(input),
-        payments = listOf(payment),
+        inputsToSpend = listOf(input),
+        transactionRequest = request,
         changeAddress = "u1change...",
         network = "testnet",
         expiryHeight = 3720100u
     )
-    
-    // Sign
+
+    // 4. Sign transparent inputs (external signing)
     val sighash = getSighash(pczt, 0u)
-    val signature = sign(sighash, privateKey)
-    pczt = appendSignature(pczt, 0u, pubkeyBytes, signature)
     
-    // Prove
+    // Sign the sighash with your key (ECDSA secp256k1)
+    val signature = sign(sighash, privateKey) // Your signing logic
+    
+    pczt = appendSignature(pczt, 0u, pubkeyHex, signature)
+
+    // 5. Generate Orchard proofs (~10 seconds first time)
     pczt = proveTransaction(pczt)
-    
-    // Finalize
+
+    // 6. Finalize and get raw transaction
     val txHex = finalizeAndExtractHex(pczt)
-    println("Transaction: $txHex")
+
+    println("Transaction ready: $txHex")
 }
 ```
 
-## Android Considerations
+## API Reference
 
-### Native Library Loading
+### Transaction Construction
 
-The SDK includes native libraries for:
-- `arm64-v8a`
-- `armeabi-v7a`
-- `x86_64`
-- `x86`
+| Function | Description |
+|----------|-------------|
+| `proposeTransaction` | Create a PCZT from inputs and payments |
+| `verifyBeforeSigning` | Verify PCZT matches original request |
+
+### Signing
+
+| Function | Description |
+|----------|-------------|
+| `getSighash` | Get sighash for external signing |
+| `appendSignature` | Add a pre-computed signature |
+| `signTransparentInput` | Sign with in-memory private key |
+
+### Proving & Finalization
+
+| Function | Description |
+|----------|-------------|
+| `proveTransaction` | Generate Orchard ZK proofs |
+| `finalizeAndExtract` | Extract final transaction bytes |
+| `finalizeAndExtractHex` | Extract as hex string |
+| `combinePczts` | Combine multiple PCZTs |
+
+### Utilities
+
+| Function | Description |
+|----------|-------------|
+| `prebuildProvingKey` | Pre-build proving key at startup |
+| `isProvingKeyReady` | Check if proving key is cached |
+| `version` | Get library version |
+
+## Types
+
+### UniffiTransparentInput
 
 ```kotlin
-// Libraries are loaded automatically, but you can verify:
+data class UniffiTransparentInput(
+    val pubkey: String,       // 33-byte compressed pubkey (hex)
+    val prevoutTxid: String,  // 32-byte txid (little-endian hex)
+    val prevoutIndex: UInt,   // Output index
+    val value: ULong,         // Value in zatoshis
+    val scriptPubkey: String, // P2PKH scriptPubkey (hex)
+    val sequence: UInt?       // Optional sequence number
+)
+```
+
+### UniffiPayment
+
+```kotlin
+data class UniffiPayment(
+    val address: String,  // Unified or transparent address
+    val amount: ULong,    // Amount in zatoshis
+    val memo: String?,    // Optional memo (hex-encoded)
+    val label: String?    // Optional label
+)
+```
+
+### UniffiExpectedTxOut
+
+```kotlin
+data class UniffiExpectedTxOut(
+    val address: String, // Expected address
+    val amount: ULong    // Expected amount (0 = wildcard)
+)
+```
+
+## Error Handling
+
+All functions throw `UniffiException` on error:
+
+```kotlin
 try {
-    System.loadLibrary("t2z_uniffi")
-    println("t2z native library loaded")
-} catch (e: UnsatisfiedLinkError) {
-    println("Failed to load t2z: ${e.message}")
+    val pczt = proposeTransaction(inputs, request, changeAddr, network, expiry)
+} catch (e: UniffiException) {
+    println("Error: ${e.message}")
+}
+```
+
+## Performance Tips
+
+### Pre-build Proving Key
+
+The first proof generation takes ~10 seconds. Pre-build at startup:
+
+```kotlin
+fun initT2z() {
+    if (!isProvingKeyReady()) {
+        println("Building Orchard proving key...")
+        prebuildProvingKey()
+        println("Proving key ready")
+    }
+}
+```
+
+## Android Integration
+
+For Android, ensure the native library is placed in the correct `jniLibs` directory:
+
+```
+app/src/main/jniLibs/
+├── arm64-v8a/
+│   └── libt2z_uniffi.so
+├── armeabi-v7a/
+│   └── libt2z_uniffi.so
+└── x86_64/
+    └── libt2z_uniffi.so
+```
+
+Add to `build.gradle.kts`:
+
+```kotlin
+android {
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("src/main/jniLibs")
+        }
+    }
 }
 ```
 
@@ -110,8 +223,8 @@ try {
 Add to your `proguard-rules.pro`:
 
 ```proguard
--keep class com.d4mr.t2z.** { *; }
--keepclassmembers class com.d4mr.t2z.** { *; }
+-keep class uniffi.t2z_uniffi.** { *; }
+-keepclassmembers class uniffi.t2z_uniffi.** { *; }
 ```
 
 ### Minimum SDK
@@ -124,30 +237,34 @@ Add to your `proguard-rules.pro`:
 The SDK is fully usable from Java:
 
 ```java
-import com.d4mr.t2z.*;
+import uniffi.t2z_uniffi.*;
 import java.util.List;
 
 public class Example {
     public static void main(String[] args) {
-        TransparentInput input = new TransparentInput(
-            pubkeyBytes,
-            txidBytes,
+        UniffiTransparentInput input = new UniffiTransparentInput(
+            "03abc123...",
+            "ce15f716...",
             0,
             1_000_000L,
-            scriptBytes,
+            "76a914...88ac",
             null
         );
         
-        Payment payment = new Payment(
+        UniffiPayment payment = new UniffiPayment(
             "u1recipient...",
             800_000L,
             null,
             null
         );
         
-        Pczt pczt = T2z.proposeTransaction(
+        UniffiTransactionRequest request = new UniffiTransactionRequest(
+            List.of(payment)
+        );
+        
+        UniffiPczt pczt = T2zUniffiKt.proposeTransaction(
             List.of(input),
-            List.of(payment),
+            request,
             "u1change...",
             "testnet",
             3720100
@@ -162,44 +279,32 @@ public class Example {
 
 | TypeScript | Kotlin | Java |
 |------------|--------|------|
-| `WasmTransparentInput` | `TransparentInput` | `TransparentInput` |
-| `WasmPayment` | `Payment` | `Payment` |
-| `WasmPczt` | `Pczt` | `Pczt` |
+| `WasmTransparentInput` | `UniffiTransparentInput` | `UniffiTransparentInput` |
+| `WasmPayment` | `UniffiPayment` | `UniffiPayment` |
+| `WasmPczt` | `UniffiPczt` | `UniffiPczt` |
 | `bigint` | `ULong` | `long` |
-| `string` (hex) | `ByteArray` | `byte[]` |
+| `string` (hex) | `String` | `String` |
 | `null` | `null` | `null` |
 
 ## Building from Source
 
-Until the package is published, you can build from source:
-
 ```bash
 # Clone the repository
 git clone https://github.com/d4mr/t2z
-cd t2z
+cd t2z/crates
 
-# Build Kotlin bindings
-cd crates/t2z-uniffi
-cargo build --release
+# Build the UniFFI library
+cargo build --release -p t2z-uniffi
 
-# Generate Kotlin code
-uniffi-bindgen-kotlin src/lib.udl --out-dir kotlin/
-
-# Build AAR for Android
-./gradlew assembleRelease
+# Generate Kotlin bindings
+cargo run -p t2z-uniffi --bin uniffi-bindgen -- \
+    generate --library target/release/libt2z_uniffi.dylib \
+    --language kotlin \
+    --out-dir ../sdks/kotlin/src/main/kotlin
 ```
 
-## Get Notified
+## Related
 
-<Card title="Watch on GitHub" icon="github" href="https://github.com/d4mr/t2z">
-  Star and watch the repository to be notified when the Kotlin SDK is released.
-</Card>
-
-## Interested in Contributing?
-
-The Kotlin SDK is built using [UniFFI](https://mozilla.github.io/uniffi-rs/). Contributions are welcome!
-
-Key files:
-- `crates/t2z-uniffi/src/lib.rs` — UniFFI bindings
-- `crates/t2z-uniffi/src/lib.udl` — Interface definition
-
+- [t2z Documentation](https://t2z.d4mr.com)
+- [ZIP 374: PCZT Specification](https://github.com/zcash/zips/pull/1063)
+- [UniFFI Documentation](https://mozilla.github.io/uniffi-rs/)

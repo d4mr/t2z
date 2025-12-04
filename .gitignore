@@ -22,6 +22,7 @@ go.sum
 *.war
 build/
 .gradle/
+.kotlin/
 
 # IDE
 .idea/

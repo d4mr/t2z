@@ -1035,13 +1035,14 @@ pub fn verify_before_signing(
                 if matched_changes[idx] {
                     continue;
                 }
-                if change.amount == value
-                    && let Some(expected_script) = get_transparent_script(&change.address)
-                    && output_script == expected_script
-                {
-                    matched_changes[idx] = true;
-                    matched = true;
-                    break;
+                // Get expected script for change address
+                if let Some(expected_script) = get_transparent_script(&change.address) {
+                    // Match by script first, then amount (amount=0 is wildcard)
+                    if output_script == expected_script && (change.amount == 0 || change.amount == value) {
+                        matched_changes[idx] = true;
+                        matched = true;
+                        break;
+                    }
                 }
             }
         }

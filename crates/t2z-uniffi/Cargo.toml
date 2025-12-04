@@ -10,6 +10,10 @@ description = "UniFFI bindings for T2Z - Go, Kotlin, and Java support"
 [lib]
 crate-type = ["cdylib", "staticlib", "lib"]
 
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
 [dependencies]
 t2z-core.workspace = true
 

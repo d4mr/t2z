@@ -30,7 +30,7 @@
 |----------|---------|--------|
 | **TypeScript** | [`@d4mr/t2z-wasm`](https://www.npmjs.com/package/@d4mr/t2z-wasm) | ✅ Available |
 | **Go** | `github.com/d4mr/t2z/sdks/go` | ✅ Available (build from source) |
-| **Kotlin** | `com.d4mr:t2z` | 🚧 Coming Soon |
+| **Kotlin** | `com.d4mr:t2z` | ✅ Available (build from source) |
 
 ## 🚀 Quick Start
 

@@ -174,7 +174,7 @@ export function PaymentsStep({
                     )}
                   </div>
                   <div className="font-mono text-sm text-white mt-1">{formatZec(payment.amount)}</div>
-                  <div className="text-gray-500 text-xs font-mono">
+                  <div className="text-gray-500 text-xs font-mono truncate">
                     {payment.address}
                   </div>
                   {payment.memo && (

@@ -62,7 +62,7 @@ console_error_panic_hook = "0.1.7"
 web-sys = { version = "0.3", features = ["console"] }
 
 # UniFFI (must match uniffi-bindgen-go version)
-uniffi = "0.28.3"
+uniffi = { version = "0.28.3", features = ["cli"] }
 
 # Dev/test
 wasm-bindgen-test = "0.3.34"

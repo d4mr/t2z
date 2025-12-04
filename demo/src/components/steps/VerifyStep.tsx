@@ -53,9 +53,10 @@ export function VerifyStep({
   }, [pcztHex]);
 
   // Get actual change from PCZT
+  // Change = total_input - fee - payment_amount
   const totalPaymentAmount = payments.reduce((sum, p) => sum + p.amount, 0n);
   const actualChangeAmount = pcztInfo 
-    ? BigInt(pcztInfo.total_orchard_output) - totalPaymentAmount
+    ? BigInt(pcztInfo.total_input) - BigInt(pcztInfo.implied_fee) - totalPaymentAmount
     : changeAmount;
 
   const formatZec = (zatoshis: number | bigint) => {

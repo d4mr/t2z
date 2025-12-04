@@ -155,8 +155,10 @@ export function ProposeStep({
       console.log('PCZT inspection:', info);
       
       // Calculate actual fee and change from the PCZT
+      // Change = total_input - fee - payment_amount
       const actualFee = BigInt(info.implied_fee);
-      const actualChange = BigInt(info.total_orchard_output) - totalOut;
+      const totalInputValue = BigInt(info.total_input);
+      const actualChange = totalInputValue - actualFee - totalOut;
       
       onFeeChange(actualFee);
       onChangeChange(actualChange > 0n ? actualChange : 0n);
