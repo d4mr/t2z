@@ -1,0 +1,25 @@
+# Headers for Cloudflare Pages
+# Required for multithreaded WASM (SharedArrayBuffer)
+
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+
+# Cache static assets
+/*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.wasm
+  Cache-Control: public, max-age=31536000, immutable
+  Content-Type: application/wasm
+
+/*.css
+  Cache-Control: public, max-age=31536000, immutable
+
+# Don't cache HTML (for updates)
+/*.html
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache
+

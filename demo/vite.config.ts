@@ -11,7 +11,7 @@ export default defineConfig({
     wasm(),
     topLevelAwait(),
   ],
-  publicDir: 'assets',
+  publicDir: 'public',
   server: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
