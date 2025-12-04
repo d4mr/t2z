@@ -4,6 +4,17 @@ import { Input } from '../Input';
 import { CodeBlock } from '../CodeBlock';
 import type { Payment, Network } from '../../lib/types';
 import * as t2z from '@d4mr/t2z-wasm';
+import { bytesToHex } from '../../lib/crypto';
+
+/**
+ * Convert a text memo to hex encoding (for WASM binding)
+ * The memo is encoded as UTF-8 bytes then hex-encoded
+ */
+function textToHex(text: string): string {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(text);
+  return bytesToHex(bytes);
+}
 
 interface Props {
   network: Network;
@@ -35,9 +46,18 @@ export function PaymentsStep({
 
   const handleGenerateTestAddress = () => {
     try {
-      const testAddress = t2z.generate_test_address(network);
-      setAddress(testAddress);
-      addLog('info', 'payments', 'Generated test Orchard address (funds will be unspendable!)');
+      // Use generate_test_keypair to get address + keys for viewing
+      const result = t2z.generate_test_keypair(network) as {
+        address: string;
+        spending_key: string;
+        full_viewing_key: string;  // uviewtest1... or uview1...
+        full_viewing_key_hex: string;
+      };
+      setAddress(result.address);
+      addLog('info', 'payments', 'Generated test Orchard address with viewing key');
+      addLog('info', 'payments', `Address: ${result.address}`);
+      addLog('info', 'payments', `Unified Viewing Key: ${result.full_viewing_key}`);
+      addLog('info', 'payments', `⚠️ Spending Key (hex, save to spend!): ${result.spending_key}`);
     } catch (err) {
       addLog('error', 'payments', `Failed to generate address: ${err}`);
     }
@@ -50,14 +70,24 @@ export function PaymentsStep({
         throw new Error('Amount must be positive');
       }
 
+      // Convert memo text to hex for WASM binding
+      // The WASM binding expects hex-encoded memo bytes
+      const memoText = memo.trim();
+      const memoHex = memoText ? textToHex(memoText) : undefined;
+      
+      if (memoHex && memoHex.length > 1024) { // 512 bytes = 1024 hex chars
+        throw new Error('Memo too long (max 512 bytes)');
+      }
+
       const payment: Payment = {
         address: address.trim(),
         amount: amountNum,
-        memo: memo.trim() || undefined,
+        memo: memoHex,  // Now hex-encoded
         label: label.trim() || undefined,
       };
 
       onAddPayment(payment);
+      addLog('info', 'payments', `Added payment: ${Number(amountNum) / 100_000_000} ZEC to ${address.slice(0, 20)}...`);
       
       // Reset form
       setAddress('');
@@ -144,7 +174,7 @@ export function PaymentsStep({
                     )}
                   </div>
                   <div className="font-mono text-sm text-white mt-1">{formatZec(payment.amount)}</div>
-                  <div className="text-gray-500 text-xs font-mono truncate">
+                  <div className="text-gray-500 text-xs font-mono">
                     {payment.address}
                   </div>
                   {payment.memo && (
@@ -212,7 +242,7 @@ export function PaymentsStep({
               placeholder="Private message to recipient (max 512 bytes)"
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
-              hint="Memos are encrypted and only visible to the recipient"
+              hint="Enter plain text - it will be encrypted and only visible to the recipient"
             />
           )}
         </div>

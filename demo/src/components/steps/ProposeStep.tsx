@@ -80,14 +80,22 @@ export function ProposeStep({
       );
 
       // Build payments
-      const wasmPayments = payments.map(payment =>
-        new t2z.WasmPayment(
+      const wasmPayments = payments.map((payment, idx) => {
+        // Debug logging to verify amounts
+        console.log(`Payment ${idx}: address=${payment.address.slice(0, 20)}..., amount=${payment.amount} (type: ${typeof payment.amount})`);
+        addLog('info', 'propose', `Payment ${idx}: ${Number(payment.amount) / 100_000_000} ZEC (${payment.amount} zatoshis)`);
+        
+        // Ensure amount is converted properly for WASM
+        // wasm-bindgen expects u64 which can accept BigInt
+        const amount = payment.amount;
+        
+        return new t2z.WasmPayment(
           payment.address,
-          payment.amount,
+          amount,
           payment.memo ?? null,
           payment.label ?? null
-        )
-      );
+        );
+      });
 
       // Determine change address - always provide one if there might be change
       // The Builder will calculate the exact fee, so we need a change address
@@ -99,17 +107,29 @@ export function ProposeStep({
         throw new Error('Change address required when input exceeds payment amount');
       }
 
-      // Nu5 (Orchard) activation heights:
-      // - Mainnet: 1,687,104
-      // - Testnet: 1,842,420
-      // We need to use a height AFTER Nu5 for Orchard to be available
-      // In production, use current block height + some buffer for expiry
-      const expiryHeight = network === 'mainnet' ? 2_500_000 : 2_500_000;
+      // Expiry height must be:
+      // 1. After Nu5 activation (mainnet: 1,687,104, testnet: 1,842,420)
+      // 2. At least current block height + ~40 blocks to avoid "expiring soon" error
+      // 
+      // Current approximate heights (Dec 2025):
+      // - Mainnet: ~3,720,000
+      // - Testnet: ~3,720,000 (similar to mainnet)
+      //
+      // In production, fetch current height from lightwalletd and add a buffer (e.g., +100 blocks)
+      const currentApproxHeight = 3_720_000; // Same for both networks
+      const expiryHeight = currentApproxHeight + 100; // ~2.5 hours buffer
 
+      // Debug: Log total payment amounts
+      const totalPaymentAmount = payments.reduce((sum, p) => sum + p.amount, 0n);
+      console.log('Total payment amount:', totalPaymentAmount, 'type:', typeof totalPaymentAmount);
+      
       addLog('info', 'propose', 'Calling propose_transaction...');
+      addLog('info', 'propose', `Total payment amount: ${Number(totalPaymentAmount) / 100_000_000} ZEC (${totalPaymentAmount} zatoshis)`);
       addLog('code', 'propose', 'Creating PCZT with:', JSON.stringify({
         inputs: inputs.length,
         payments: payments.length,
+        totalPaymentZatoshis: totalPaymentAmount.toString(),
+        totalInputZatoshis: totalIn.toString(),
         fee: 'auto (Builder will calculate ZIP-317 fee)',
         changeAddress: finalChangeAddress ? finalChangeAddress.slice(0, 20) + '...' : null,
         network,
@@ -130,16 +150,38 @@ export function ProposeStep({
       setPcztCreated(true);
       onPcztChange(hex);
       
-      // The fee was calculated by the Builder automatically
-      // We don't know the exact fee without parsing the PCZT
-      onFeeChange(0n); // TODO: extract actual fee from PCZT if needed
-      onChangeChange(0n); // TODO: extract actual change from PCZT if needed
+      // Use inspect_pczt to get the actual fee and transaction details
+      const info = t2z.inspect_pczt(hex);
+      console.log('PCZT inspection:', info);
+      
+      // Calculate actual fee and change from the PCZT
+      const actualFee = BigInt(info.implied_fee);
+      const actualChange = BigInt(info.total_orchard_output) - totalOut;
+      
+      onFeeChange(actualFee);
+      onChangeChange(actualChange > 0n ? actualChange : 0n);
       if (finalChangeAddress) {
         onChangeAddressChange(finalChangeAddress);
       }
 
       addLog('success', 'propose', `PCZT created successfully (${hex.length} bytes hex)`);
-      addLog('code', 'propose', 'PCZT (first 200 chars):', hex.slice(0, 200) + '...');
+      addLog('code', 'propose', 'Transaction Details:', JSON.stringify({
+        expiryHeight: info.expiry_height,
+        totalInput: info.total_input,
+        totalTransparentOutput: info.total_transparent_output,
+        totalOrchardOutput: info.total_orchard_output,
+        impliedFee: info.implied_fee,
+        numOrchardActions: info.num_orchard_actions,
+        inputs: info.transparent_inputs.map((i: any) => ({
+          txid: i.prevout_txid.slice(0, 16) + '...',
+          value: i.value,
+          signed: i.is_signed,
+        })),
+        orchardOutputs: info.orchard_outputs.map((o: any) => ({
+          value: o.value,
+          hasRecipient: !!o.recipient,
+        })),
+      }, null, 2));
 
     } catch (err) {
       addLog('error', 'propose', `Failed to propose transaction: ${err}`);
@@ -244,9 +286,12 @@ export function ProposeStep({
 // TransactionRequest is just payments per ZIP 321 (no fee/change)
 // https://zips.z.cash/zip-0321
 
-// IMPORTANT: expiry_height must be AFTER Nu5 activation for Orchard to work!
-// Nu5 activated at 1,687,104 (mainnet) / 1,842,420 (testnet)
-const expiryHeight = 2_500_000;  // Use current height + buffer in production
+// IMPORTANT: expiry_height must be:
+// 1. After Nu5 activation (mainnet: 1,687,104, testnet: 1,842,420)
+// 2. At least current_height + 40 to avoid "tx-expiring-soon" error
+// In production, fetch current height from lightwalletd
+const currentHeight = await fetchCurrentBlockHeight(); // ~3,930,000 on mainnet (Dec 2025)
+const expiryHeight = currentHeight + 100; // ~2.5 hours buffer
 
 const pczt = propose_transaction(
   inputs,           // WasmTransparentInput[]

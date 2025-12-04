@@ -10,11 +10,16 @@
   --zcash-yellow-dark: #c79100;
 }
 
-body {
+html, body {
   font-family: var(--font-sans);
-  background: linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 50%, #0f0f1a 100%);
+  background: #0f0f0f;
   min-height: 100vh;
   color: #e5e5e5;
+}
+
+body {
+  background: linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 50%, #0f0f1a 100%);
+  background-attachment: fixed;
 }
 
 code, pre, .font-mono {

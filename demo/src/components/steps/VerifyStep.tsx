@@ -1,8 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '../Button';
 import { CodeBlock } from '../CodeBlock';
 import type { Payment } from '../../lib/types';
 import * as t2z from '@d4mr/t2z-wasm';
+
+interface PcztInfo {
+  expiry_height: number;
+  total_input: number;
+  total_transparent_output: number;
+  total_orchard_output: number;
+  implied_fee: number;
+  num_orchard_actions: number;
+  all_inputs_signed: boolean;
+  has_orchard_proofs: boolean;
+  transparent_inputs: Array<{ prevout_txid: string; value: number; is_signed: boolean }>;
+  orchard_outputs: Array<{ value?: number; recipient?: string }>;
+}
 
 interface Props {
   pcztHex: string;
@@ -26,6 +39,29 @@ export function VerifyStep({
   const [isVerifying, setIsVerifying] = useState(false);
   const [verified, setVerified] = useState(false);
   const [skipVerification, setSkipVerification] = useState(false);
+  const [pcztInfo, setPcztInfo] = useState<PcztInfo | null>(null);
+
+  // Inspect the PCZT on mount to get actual values
+  useEffect(() => {
+    try {
+      const info = t2z.inspect_pczt(pcztHex);
+      setPcztInfo(info);
+      addLog('code', 'verify', 'PCZT contents (via inspect_pczt):', JSON.stringify(info, null, 2));
+    } catch (err) {
+      addLog('error', 'verify', `Failed to inspect PCZT: ${err}`);
+    }
+  }, [pcztHex]);
+
+  // Get actual change from PCZT
+  const totalPaymentAmount = payments.reduce((sum, p) => sum + p.amount, 0n);
+  const actualChangeAmount = pcztInfo 
+    ? BigInt(pcztInfo.total_orchard_output) - totalPaymentAmount
+    : changeAmount;
+
+  const formatZec = (zatoshis: number | bigint) => {
+    const zec = Number(zatoshis) / 100_000_000;
+    return `${zec.toFixed(8)} ZEC`;
+  };
 
   const handleVerify = async () => {
     setIsVerifying(true);
@@ -42,10 +78,11 @@ export function VerifyStep({
         )
       );
 
-      // Build expected change outputs (per spec: expected_change: [TxOut])
+      // Build expected change outputs using actual change from PCZT
+      // Use actualChangeAmount calculated from inspect_pczt
       const expectedChange: t2z.WasmExpectedTxOut[] = [];
-      if (changeAddress && changeAmount > 0n) {
-        expectedChange.push(new t2z.WasmExpectedTxOut(changeAddress, changeAmount));
+      if (changeAddress && actualChangeAmount > 0n) {
+        expectedChange.push(new t2z.WasmExpectedTxOut(changeAddress, actualChangeAmount));
       }
 
       addLog('info', 'verify', 'Calling verify_before_signing...');
@@ -53,7 +90,7 @@ export function VerifyStep({
         paymentsCount: payments.length,
         expectedChange: expectedChange.length > 0 ? [{
           address: changeAddress?.slice(0, 20) + '...',
-          amount: changeAmount.toString(),
+          amount: actualChangeAmount.toString(),
         }] : [],
       }, null, 2));
 
@@ -91,6 +128,59 @@ export function VerifyStep({
           check to detect any malleation if the PCZT was handled by a third party.
         </p>
       </div>
+
+      {/* PCZT Details from inspect_pczt */}
+      {pcztInfo && (
+        <div className="p-4 bg-white/5 border border-white/10 rounded-lg space-y-4">
+          <h3 className="font-medium text-white">PCZT Contents (via inspect_pczt)</h3>
+          
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+            <div>
+              <div className="text-gray-500">Total Input</div>
+              <div className="text-white font-mono">{formatZec(pcztInfo.total_input)}</div>
+            </div>
+            <div>
+              <div className="text-gray-500">Payments</div>
+              <div className="text-white font-mono">{formatZec(totalPaymentAmount)}</div>
+            </div>
+            <div>
+              <div className="text-gray-500">Fee</div>
+              <div className="text-amber-400 font-mono">{formatZec(pcztInfo.implied_fee)}</div>
+            </div>
+            <div>
+              <div className="text-gray-500">Change</div>
+              <div className="text-emerald-400 font-mono">
+                {actualChangeAmount > 0n ? formatZec(actualChangeAmount) : '(none)'}
+              </div>
+            </div>
+            <div>
+              <div className="text-gray-500">Orchard Actions</div>
+              <div className="text-purple-400 font-mono">{pcztInfo.num_orchard_actions}</div>
+            </div>
+            <div>
+              <div className="text-gray-500">Expiry Height</div>
+              <div className="text-gray-400 font-mono">{pcztInfo.expiry_height.toLocaleString()}</div>
+            </div>
+          </div>
+
+          {/* Orchard outputs breakdown */}
+          {pcztInfo.orchard_outputs.length > 0 && (
+            <div className="pt-2 border-t border-white/10">
+              <div className="text-sm text-gray-500 mb-2">Orchard Outputs:</div>
+              <div className="space-y-1">
+                {pcztInfo.orchard_outputs.map((output, idx) => (
+                  <div key={idx} className="flex justify-between text-sm font-mono">
+                    <span className="text-gray-400">#{idx}</span>
+                    <span className={output.value && output.value > 0 ? 'text-purple-400' : 'text-gray-600'}>
+                      {output.value ? formatZec(output.value) : '0 (dummy)'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Verification Status */}
       <div className={`p-4 rounded-lg border ${

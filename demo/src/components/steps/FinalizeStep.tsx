@@ -1,7 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '../Button';
 import { CodeBlock } from '../CodeBlock';
 import * as t2z from '@d4mr/t2z-wasm';
+
+interface PcztInfo {
+  all_inputs_signed: boolean;
+  has_orchard_proofs: boolean;
+  transparent_inputs: Array<{ is_signed: boolean }>;
+  num_orchard_actions: number;
+  implied_fee: number;
+  total_input: number;
+  total_orchard_output: number;
+}
 
 interface Props {
   pcztHex: string;
@@ -19,27 +29,54 @@ export function FinalizeStep({
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [finalized, setFinalized] = useState(false);
   const [finalTxHex, setFinalTxHex] = useState<string | null>(null);
+  const [pcztInfo, setPcztInfo] = useState<PcztInfo | null>(null);
+
+  // Inspect PCZT on mount
+  useEffect(() => {
+    try {
+      const info = t2z.inspect_pczt(pcztHex);
+      setPcztInfo(info);
+      addLog('code', 'finalize', 'PCZT status before finalization:', JSON.stringify({
+        allInputsSigned: info.all_inputs_signed,
+        hasOrchardProofs: info.has_orchard_proofs,
+        signedInputs: info.transparent_inputs.filter((i: any) => i.is_signed).length,
+        totalInputs: info.transparent_inputs.length,
+      }, null, 2));
+    } catch (err) {
+      addLog('error', 'finalize', `Failed to inspect PCZT: ${err}`);
+    }
+  }, [pcztHex]);
+
+  const isReadyToFinalize = pcztInfo?.all_inputs_signed && pcztInfo?.has_orchard_proofs;
 
   const handleFinalize = async () => {
     setIsFinalizing(true);
     addLog('info', 'finalize', 'Finalizing transaction and extracting raw bytes...');
     
-    try {
-      const pczt = t2z.WasmPczt.from_hex(pcztHex);
-      const txHex = t2z.finalize_and_extract_hex(pczt);
-      
-      setFinalTxHex(txHex);
-      setFinalized(true);
-      onFinalTxChange(txHex);
-      
-      addLog('success', 'finalize', 'Transaction finalized successfully!');
-      addLog('code', 'finalize', 'Raw transaction hex:', txHex);
-      
-    } catch (err) {
-      addLog('error', 'finalize', `Failed to finalize: ${err}`);
-    } finally {
-      setIsFinalizing(false);
-    }
+    // Allow UI to update before the blocking operation
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Use requestAnimationFrame to ensure the loading state is painted
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try {
+          const pczt = t2z.WasmPczt.from_hex(pcztHex);
+          const txHex = t2z.finalize_and_extract_hex(pczt);
+          
+          setFinalTxHex(txHex);
+          setFinalized(true);
+          onFinalTxChange(txHex);
+          
+          addLog('success', 'finalize', 'Transaction finalized successfully!');
+          addLog('code', 'finalize', 'Raw transaction hex:', txHex);
+          
+        } catch (err) {
+          addLog('error', 'finalize', `Failed to finalize: ${err}`);
+        } finally {
+          setIsFinalizing(false);
+        }
+      }, 0);
+    });
   };
 
   const handleCopyTx = () => {
@@ -59,17 +96,46 @@ export function FinalizeStep({
         </p>
       </div>
 
+      {/* PCZT Status */}
+      {pcztInfo && !finalized && (
+        <div className="p-4 bg-white/5 border border-white/10 rounded-lg space-y-3">
+          <h3 className="font-medium text-white">PCZT Status</h3>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <span className={pcztInfo.all_inputs_signed ? 'text-emerald-400' : 'text-amber-400'}>
+                {pcztInfo.all_inputs_signed ? '✓' : '○'}
+              </span>
+              <span className="text-gray-400">
+                Signatures: {pcztInfo.transparent_inputs.filter((i: any) => i.is_signed).length}/{pcztInfo.transparent_inputs.length}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={pcztInfo.has_orchard_proofs ? 'text-emerald-400' : 'text-amber-400'}>
+                {pcztInfo.has_orchard_proofs ? '✓' : '○'}
+              </span>
+              <span className="text-gray-400">
+                Orchard Proofs: {pcztInfo.has_orchard_proofs ? 'Ready' : 'Missing'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Finalize Section */}
       {!finalized ? (
         <div className="p-4 bg-white/5 border border-white/10 rounded-lg space-y-4">
           <div>
-            <div className="text-white font-medium">Ready to Finalize</div>
+            <div className="text-white font-medium">
+              {isReadyToFinalize ? 'Ready to Finalize' : 'Not Ready Yet'}
+            </div>
             <div className="text-gray-400 text-sm mt-1">
-              This will perform final validation and extract the raw transaction bytes.
+              {isReadyToFinalize 
+                ? 'All signatures and proofs are complete. Click below to extract the final transaction.'
+                : 'Make sure all inputs are signed and Orchard proofs are generated before finalizing.'}
             </div>
           </div>
           
-          <Button onClick={handleFinalize} loading={isFinalizing}>
+          <Button onClick={handleFinalize} loading={isFinalizing} disabled={!isReadyToFinalize}>
             Finalize Transaction
           </Button>
         </div>

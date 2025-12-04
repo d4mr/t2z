@@ -46,8 +46,7 @@ fn test_shadow_struct_roundtrip_empty_pczt() {
             println!("Orchard actions: {}", shadow.orchard.actions.len());
 
             // Try to re-serialize
-            let re_serialized =
-                postcard::to_allocvec(&shadow).expect("Failed to serialize shadow");
+            let re_serialized = postcard::to_allocvec(&shadow).expect("Failed to serialize shadow");
 
             // Verify they match
             assert_eq!(
@@ -66,7 +65,14 @@ fn test_shadow_struct_roundtrip_empty_pczt() {
 #[test]
 fn test_shadow_struct_with_modified_input() {
     // Create a simple PCZT
-    let pczt = Creator::new(BranchId::Nu6.into(), 10_000_000, 2_500_000, [0; 32], [0; 32]).build();
+    let pczt = Creator::new(
+        BranchId::Nu6.into(),
+        10_000_000,
+        2_500_000,
+        [0; 32],
+        [0; 32],
+    )
+    .build();
     let serialized = pczt.serialize();
 
     let data = &serialized[8..];
@@ -126,7 +132,10 @@ fn test_shadow_struct_with_modified_input() {
         }
         Err(e) => {
             // This might fail due to validation - that's expected
-            println!("Failed to parse modified PCZT (expected for incomplete data): {:?}", e);
+            println!(
+                "Failed to parse modified PCZT (expected for incomplete data): {:?}",
+                e
+            );
         }
     }
 }
@@ -134,16 +143,25 @@ fn test_shadow_struct_with_modified_input() {
 #[test]
 fn test_shadow_add_signature_to_existing_input() {
     // This test simulates what append_signature does
-    let pczt = Creator::new(BranchId::Nu6.into(), 10_000_000, 2_500_000, [0; 32], [0; 32]).build();
+    let pczt = Creator::new(
+        BranchId::Nu6.into(),
+        10_000_000,
+        2_500_000,
+        [0; 32],
+        [0; 32],
+    )
+    .build();
     let serialized = pczt.serialize();
 
     let data = &serialized[8..];
 
     // First, verify we can deserialize
-    let mut shadow: shadow::PcztShadow =
-        postcard::from_bytes(data).expect("Failed to deserialize");
+    let mut shadow: shadow::PcztShadow = postcard::from_bytes(data).expect("Failed to deserialize");
 
-    println!("Initial transparent inputs: {}", shadow.transparent.inputs.len());
+    println!(
+        "Initial transparent inputs: {}",
+        shadow.transparent.inputs.len()
+    );
 
     // If there are no inputs, add one for testing
     if shadow.transparent.inputs.is_empty() {
@@ -205,3 +223,30 @@ fn test_shadow_add_signature_to_existing_input() {
     }
 }
 
+#[test]
+fn derive_ufvk() {
+    use orchard::keys::{SpendingKey, FullViewingKey, Scope};
+    use zcash_address::unified::{self, Encoding, Ufvk, Fvk};
+    use zcash_protocol::consensus::NetworkType;
+    
+    let sk_hex = "2eae94c0d77330143ccc67d68a74a6ef05d772340328cbeb1514e437d838b05a";
+    let sk_bytes: [u8; 32] = hex::decode(sk_hex).unwrap().try_into().unwrap();
+    let sk = SpendingKey::from_bytes(sk_bytes).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    
+    // Create Unified FVK with Orchard component
+    let ufvk = Ufvk::try_from_items(vec![
+        Fvk::Orchard(fvk.to_bytes())
+    ]).unwrap();
+    
+    // Encode for testnet (will start with "uviewtest1...")
+    let encoded = ufvk.encode(&NetworkType::Test);
+    println!("UFVK: {}", encoded);
+    
+    // Also print address to verify
+    let address = fvk.address_at(0u32, Scope::External);
+    let ua = unified::Address::try_from_items(vec![
+        unified::Receiver::Orchard(address.to_raw_address_bytes())
+    ]).unwrap();
+    println!("Address: {}", ua.encode(&NetworkType::Test));
+}

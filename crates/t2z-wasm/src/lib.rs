@@ -681,12 +681,63 @@ pub fn generate_test_keypair(network: &str) -> Result<JsValue, JsError> {
     // Encode for the network
     let encoded = ua.encode(&network_type);
 
-    // Return as JS object
+    // Serialize the full viewing key as 96 bytes (ak, nk, rivk)
+    let fvk_bytes = fvk.to_bytes();
+    
+    // Create a unified full viewing key (UFVK) with just the Orchard component
+    // This encodes to uview1... (mainnet) or uviewtest1... (testnet)
+    let ufvk = unified::Ufvk::try_from_items(vec![unified::Fvk::Orchard(fvk_bytes)])
+        .map_err(|e| JsError::new(&format!("Failed to create UFVK: {:?}", e)))?;
+    let ufvk_encoded = ufvk.encode(&network_type);
+    
+    // Return as JS object with address, spending key, and viewing key
     let obj = js_sys::Object::new();
     js_sys::Reflect::set(&obj, &"address".into(), &encoded.into())
         .map_err(|_| JsError::new("Failed to set address"))?;
     js_sys::Reflect::set(&obj, &"spending_key".into(), &hex::encode(sk_bytes).into())
         .map_err(|_| JsError::new("Failed to set spending_key"))?;
+    js_sys::Reflect::set(&obj, &"full_viewing_key".into(), &ufvk_encoded.into())
+        .map_err(|_| JsError::new("Failed to set full_viewing_key"))?;
+    // Also include raw hex for debugging
+    js_sys::Reflect::set(&obj, &"full_viewing_key_hex".into(), &hex::encode(fvk_bytes).into())
+        .map_err(|_| JsError::new("Failed to set full_viewing_key_hex"))?;
 
     Ok(obj.into())
+}
+
+// ============================================================================
+// PCZT Inspection
+// ============================================================================
+
+/// Inspect a PCZT and return detailed information about its contents.
+///
+/// Returns a JSON object with:
+/// - `expiry_height`: Transaction expiry height
+/// - `transparent_inputs`: Array of transparent inputs (txid, value, script, signed status)
+/// - `transparent_outputs`: Array of transparent outputs (value, script, address)
+/// - `orchard_outputs`: Array of Orchard outputs (value, recipient, address)
+/// - `total_input`: Total input value in zatoshis
+/// - `total_transparent_output`: Total transparent output value
+/// - `total_orchard_output`: Total Orchard output value
+/// - `implied_fee`: Calculated fee (inputs - outputs)
+/// - `num_orchard_actions`: Number of Orchard actions
+/// - `all_inputs_signed`: Whether all transparent inputs have signatures
+/// - `has_orchard_proofs`: Whether Orchard bundle has proofs
+///
+/// This is useful for:
+/// - Displaying transaction details before signing
+/// - Getting the actual fee and change amounts after propose_transaction
+/// - Verifying the transaction matches expectations
+/// - Checking signing/proving progress
+#[wasm_bindgen]
+pub fn inspect_pczt(pczt_hex: &str) -> Result<JsValue, JsError> {
+    let pczt_bytes = hex::decode(pczt_hex)
+        .map_err(|e| JsError::new(&format!("Invalid hex: {}", e)))?;
+    
+    let info = t2z_core::inspect_pczt_bytes(&pczt_bytes)
+        .map_err(|e| JsError::new(&format!("Failed to inspect PCZT: {}", e)))?;
+    
+    // Convert to JS value using serde
+    serde_wasm_bindgen::to_value(&info)
+        .map_err(|e| JsError::new(&format!("Failed to serialize: {}", e)))
 }

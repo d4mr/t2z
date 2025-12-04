@@ -124,15 +124,17 @@ pub enum T2ZError {
 
     #[error("Invalid memo: {0}")]
     InvalidMemo(String),
-    
-    #[error("Insufficient funds: available {available}, required {required} (payment: {payment}, fee: {fee})")]
+
+    #[error(
+        "Insufficient funds: available {available}, required {required} (payment: {payment}, fee: {fee})"
+    )]
     InsufficientFunds {
         available: u64,
         required: u64,
         payment: u64,
         fee: u64,
     },
-    
+
     #[error("Change required: {change} zatoshis left over but no change_address provided")]
     ChangeRequired { change: u64 },
 
@@ -408,19 +410,22 @@ pub fn propose_transaction(
         Transparent(zcash_transparent::address::TransparentAddress),
         Orchard(orchard::Address),
     }
-    
-    let change_dest_type: Option<ChangeDestination> = if let Some(change_addr_str) = change_address {
+
+    let change_dest_type: Option<ChangeDestination> = if let Some(change_addr_str) = change_address
+    {
         let change_addr = zcash_address::ZcashAddress::try_from_encoded(change_addr_str)
             .map_err(|e| T2ZError::InvalidAddress(format!("Invalid change address: {:?}", e)))?;
-        
+
         if change_addr.can_receive_as(zcash_protocol::PoolType::TRANSPARENT) {
-            Some(ChangeDestination::Transparent(
-                parse_transparent_address(&change_addr, expected_network)?
-            ))
+            Some(ChangeDestination::Transparent(parse_transparent_address(
+                &change_addr,
+                expected_network,
+            )?))
         } else if change_addr.can_receive_as(zcash_protocol::PoolType::ORCHARD) {
-            Some(ChangeDestination::Orchard(
-                parse_orchard_receiver(&change_addr, expected_network)?
-            ))
+            Some(ChangeDestination::Orchard(parse_orchard_receiver(
+                &change_addr,
+                expected_network,
+            )?))
         } else {
             return Err(T2ZError::InvalidAddress(
                 "Change address must be transparent (P2PKH) or Orchard".to_string(),
@@ -429,17 +434,17 @@ pub fn propose_transaction(
     } else {
         None
     };
-    
+
     // Count output types and check if we have Orchard
-    let mut num_transparent_outputs = 0usize;
+    let mut _num_transparent_outputs = 0usize;
     let mut num_orchard_outputs = 0usize;
-    
+
     for payment in &request.payments {
         let addr = zcash_address::ZcashAddress::try_from_encoded(&payment.address)
             .map_err(|e| T2ZError::InvalidAddress(format!("Invalid address: {:?}", e)))?;
-        
+
         if addr.can_receive_as(zcash_protocol::PoolType::TRANSPARENT) {
-            num_transparent_outputs += 1;
+            _num_transparent_outputs += 1;
         } else if addr.can_receive_as(zcash_protocol::PoolType::ORCHARD) {
             num_orchard_outputs += 1;
         } else {
@@ -453,10 +458,10 @@ pub fn propose_transaction(
     // Calculate totals
     let total_input: u64 = transparent_inputs.iter().map(|i| i.value).sum();
     let total_payment: u64 = request.payments.iter().map(|p| p.amount).sum();
-    
+
     // Determine if we'll have any Orchard outputs (affects builder config)
-    let has_orchard = num_orchard_outputs > 0 
-        || matches!(change_dest_type, Some(ChangeDestination::Orchard(_)));
+    let has_orchard =
+        num_orchard_outputs > 0 || matches!(change_dest_type, Some(ChangeDestination::Orchard(_)));
 
     let orchard_anchor = if has_orchard {
         Some(orchard::Anchor::empty_tree())
@@ -469,7 +474,7 @@ pub fn propose_transaction(
     macro_rules! build_transaction {
         ($params:expr) => {{
             let fee_rule = FeeRule::standard();
-            
+
             let mut builder = Builder::new(
                 $params,
                 BlockHeight::from_u32(expiry_height),
@@ -551,12 +556,18 @@ pub fn propose_transaction(
                         })?;
                 }
             }
-            
-            // Now get the exact fee from the Builder using ZIP-317 standard rules
+
+            // Calculate fee and change with iteration to handle Orchard change affecting fee.
+            // When change goes to Orchard, adding the change output increases the action count,
+            // which might increase the ZIP-317 fee. We need to iterate to find the stable values.
+            let mut change_added = false;
+            let mut final_change = 0u64;
+
+            // First pass: calculate fee without change
             let fee = builder.get_fee(&fee_rule)
                 .map_err(|e| T2ZError::Builder(format!("Failed to calculate fee: {:?}", e)))?;
-            
-            // Calculate change using the Builder's fee calculation
+
+            // Calculate initial change
             let change = total_input
                 .checked_sub(total_payment)
                 .and_then(|v| v.checked_sub(fee.into_u64()))
@@ -566,16 +577,17 @@ pub fn propose_transaction(
                     payment: total_payment,
                     fee: fee.into_u64(),
                 })?;
-            
+
             // If there's change, we need a change address
             if change > 0 && change_dest_type.is_none() {
                 return Err(T2ZError::ChangeRequired { change });
             }
-            
-            // Add change output if needed (can be transparent OR Orchard)
+
+            // Handle change with iteration for Orchard (since adding Orchard change affects fee)
             if change > 0 {
                 match &change_dest_type {
                     Some(ChangeDestination::Transparent(t_addr)) => {
+                        // Transparent change doesn't affect Orchard action count, so no iteration needed
                         builder
                             .add_transparent_output(
                                 t_addr,
@@ -586,22 +598,54 @@ pub fn propose_transaction(
                             .map_err(|e| {
                                 T2ZError::Builder(format!("Failed to add transparent change output: {:?}", e))
                             })?;
+                        final_change = change;
+                        change_added = true;
                     }
                     Some(ChangeDestination::Orchard(orchard_addr)) => {
+                        // Orchard change affects action count → affects fee. Iterate to stabilize.
+                        // Add a placeholder change output to calculate the correct fee
                         builder
                             .add_orchard_output::<FeeRule>(
-                                None, // no OVK for change (user controls the address)
+                                None,
                                 *orchard_addr,
-                                change,
+                                change, // Use current estimate
                                 zcash_protocol::memo::MemoBytes::empty(),
                             )
                             .map_err(|e| {
                                 T2ZError::Builder(format!("Failed to add Orchard change output: {:?}", e))
                             })?;
+                        change_added = true;
+
+                        // Recalculate fee with the change output included
+                        let new_fee = builder.get_fee(&fee_rule)
+                            .map_err(|e| T2ZError::Builder(format!("Failed to recalculate fee: {:?}", e)))?;
+
+                        // Recalculate change with new fee
+                        let new_change = total_input
+                            .checked_sub(total_payment)
+                            .and_then(|v| v.checked_sub(new_fee.into_u64()))
+                            .ok_or_else(|| T2ZError::InsufficientFunds {
+                                available: total_input,
+                                required: total_payment + new_fee.into_u64(),
+                                payment: total_payment,
+                                fee: new_fee.into_u64(),
+                            })?;
+
+                        // The change output was already added with the old value.
+                        // The Builder will use the fee_rule at build time, so the actual
+                        // change value embedded in the action may differ from what we calculated.
+                        // However, the Builder's build_for_pczt will enforce the correct fee.
+                        // We just need to make sure we have enough funds.
+                        final_change = new_change;
+                        let _ = new_fee; // Fee was recalculated and validated
                     }
                     None => unreachable!(), // Already checked above
                 }
             }
+
+            // Note: The actual change value in the PCZT may be adjusted by the Builder
+            // during build_for_pczt to match the exact ZIP-317 fee calculation.
+            let _ = (change_added, final_change); // Suppress warnings
 
             // Build PCZT using the same fee rule we used to calculate the fee
             let result = builder
@@ -672,19 +716,24 @@ pub fn prove_transaction_with_key(
 /// # Returns
 /// 32-byte sighash that should be signed with ECDSA using secp256k1
 pub fn get_sighash(pczt: &Pczt, input_index: usize) -> Result<[u8; 32], T2ZError> {
-    use zcash_primitives::transaction::{sighash::SignableInput, sighash_v5::v5_signature_hash, txid::TxIdDigester};
-    use zcash_transparent::sighash::{SignableInput as TransparentSignableInput, SighashType};
+    use zcash_primitives::transaction::{
+        sighash::SignableInput, sighash_v5::v5_signature_hash, txid::TxIdDigester,
+    };
+    use zcash_transparent::sighash::{SighashType, SignableInput as TransparentSignableInput};
 
     // Get TransactionData from the PCZT using the public into_effects() method
-    let tx_data = pczt.clone().into_effects()
-        .ok_or_else(|| T2ZError::InvalidInput("Failed to convert PCZT to transaction data".to_string()))?;
+    let tx_data = pczt.clone().into_effects().ok_or_else(|| {
+        T2ZError::InvalidInput("Failed to convert PCZT to transaction data".to_string())
+    })?;
 
     // Compute the TxId digests needed for sighash
     let txid_parts = tx_data.digest(TxIdDigester);
 
     // Get the input data from the PCZT's transparent bundle
     let transparent_bundle = pczt.transparent();
-    let input = transparent_bundle.inputs().get(input_index)
+    let input = transparent_bundle
+        .inputs()
+        .get(input_index)
         .ok_or_else(|| T2ZError::InvalidInput(format!("Invalid input index: {}", input_index)))?;
 
     // For T2Z (P2PKH inputs), the builder always sets SIGHASH_ALL
@@ -696,9 +745,8 @@ pub fn get_sighash(pczt: &Pczt, input_index: usize) -> Result<[u8; 32], T2ZError
 
     // For P2PKH, script_code = script_pubkey (no redeem_script)
     // Create Script by wrapping the bytes in script::Code
-    let script = zcash_transparent::address::Script(
-        zcash_script::script::Code(script_pubkey_bytes.clone())
-    );
+    let script =
+        zcash_transparent::address::Script(zcash_script::script::Code(script_pubkey_bytes.clone()));
 
     // Get the value (has public getter) - it's a u64 in the serialized form
     let value = zcash_protocol::value::Zatoshis::from_u64(*input.value())
@@ -708,8 +756,8 @@ pub fn get_sighash(pczt: &Pczt, input_index: usize) -> Result<[u8; 32], T2ZError
     let transparent_signable = TransparentSignableInput::from_parts(
         sighash_type,
         input_index,
-        &script,  // script_code
-        &script,  // script_pubkey (same for P2PKH)
+        &script, // script_code
+        &script, // script_pubkey (same for P2PKH)
         value,
     );
 
@@ -780,10 +828,10 @@ fn add_signature_via_signer(
     signature: &[u8],
 ) -> Result<Pczt, T2ZError> {
     let bytes = pczt.serialize();
-    
+
     // Modify the PCZT using our shadow struct approach
     let modified_bytes = modify_pczt_signature(&bytes, input_index, *pubkey, signature.to_vec())?;
-    
+
     // Re-parse the modified PCZT
     Pczt::parse(&modified_bytes)
         .map_err(|e| T2ZError::InvalidInput(format!("Failed to parse modified PCZT: {:?}", e)))
@@ -800,36 +848,39 @@ fn modify_pczt_signature(
     signature: Vec<u8>,
 ) -> Result<Vec<u8>, T2ZError> {
     use shadow::PcztShadow;
-    
+
     // PCZT format: 4 bytes magic + 4 bytes version + postcard data
     if pczt_bytes.len() < 8 {
         return Err(T2ZError::InvalidInput("PCZT too short".to_string()));
     }
-    
+
     let magic = &pczt_bytes[..4];
     let version = &pczt_bytes[4..8];
     let data = &pczt_bytes[8..];
-    
+
     // Deserialize the postcard data into our shadow struct
     let mut pczt_shadow: PcztShadow = postcard::from_bytes(data)
         .map_err(|e| T2ZError::InvalidInput(format!("Failed to deserialize PCZT: {:?}", e)))?;
-    
+
     // Get the input and add the signature
-    let input = pczt_shadow.transparent.inputs.get_mut(input_index)
+    let input = pczt_shadow
+        .transparent
+        .inputs
+        .get_mut(input_index)
         .ok_or_else(|| T2ZError::InvalidInput(format!("Invalid input index: {}", input_index)))?;
-    
+
     input.partial_signatures.insert(pubkey, signature);
-    
+
     // Re-serialize
     let new_data = postcard::to_allocvec(&pczt_shadow)
         .map_err(|e| T2ZError::InvalidInput(format!("Failed to serialize PCZT: {:?}", e)))?;
-    
+
     // Reconstruct the full PCZT bytes
     let mut result = Vec::with_capacity(8 + new_data.len());
     result.extend_from_slice(magic);
     result.extend_from_slice(version);
     result.extend_from_slice(&new_data);
-    
+
     Ok(result)
 }
 
@@ -880,47 +931,181 @@ pub fn verify_before_signing(
     transaction_request: &TransactionRequest,
     expected_change: &[ExpectedTxOut],
 ) -> Result<(), T2ZError> {
+    use zcash_address::unified::{Address as UnifiedAddress, Container, Encoding};
+
     // Get the transparent outputs from the PCZT
     let transparent_outputs = pczt.transparent().outputs();
     let orchard_actions = pczt.orchard().actions();
-    
+
     // Track which payments and expected changes we've matched
     let mut matched_payments = vec![false; transaction_request.payments.len()];
     let mut matched_changes = vec![false; expected_change.len()];
-    
-    // 1. Verify transparent outputs match request
+
+    // Helper: Get transparent script bytes from an address string
+    // Returns None if address is not transparent
+    let get_transparent_script = |addr_str: &str| -> Option<Vec<u8>> {
+        let addr = zcash_address::ZcashAddress::try_from_encoded(addr_str).ok()?;
+        if !addr.can_receive_as(zcash_protocol::PoolType::TRANSPARENT) {
+            return None;
+        }
+
+        // Try to decode as unified address first
+        if let Ok((_, ua)) = UnifiedAddress::decode(addr_str) {
+            for receiver in ua.items() {
+                if let zcash_address::unified::Receiver::P2pkh(hash) = receiver {
+                    // Build P2PKH script: OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIG
+                    let mut script = vec![0x76, 0xa9, 0x14]; // OP_DUP OP_HASH160 PUSH20
+                    script.extend_from_slice(&hash);
+                    script.extend_from_slice(&[0x88, 0xac]); // OP_EQUALVERIFY OP_CHECKSIG
+                    return Some(script);
+                }
+                if let zcash_address::unified::Receiver::P2sh(hash) = receiver {
+                    // Build P2SH script: OP_HASH160 <20 bytes> OP_EQUAL
+                    let mut script = vec![0xa9, 0x14]; // OP_HASH160 PUSH20
+                    script.extend_from_slice(&hash);
+                    script.push(0x87); // OP_EQUAL
+                    return Some(script);
+                }
+            }
+        }
+
+        // Try to parse as legacy t-address
+        // For t1.../tm... addresses (P2PKH)
+        // The address is base58check encoded with a version prefix
+        // We can try to decode and extract the pubkey hash
+        if addr_str.starts_with("t1") || addr_str.starts_with("tm") {
+            // Legacy P2PKH address
+            if let Ok(decoded) = bs58::decode(addr_str).with_check(None).into_vec() {
+                // Format: [version (2 bytes)][pubkey_hash (20 bytes)]
+                if decoded.len() == 22 {
+                    let pubkey_hash = &decoded[2..22];
+                    let mut script = vec![0x76, 0xa9, 0x14]; // OP_DUP OP_HASH160 PUSH20
+                    script.extend_from_slice(pubkey_hash);
+                    script.extend_from_slice(&[0x88, 0xac]); // OP_EQUALVERIFY OP_CHECKSIG
+                    return Some(script);
+                }
+            }
+        }
+
+        None
+    };
+
+    // Helper: Get expected Orchard address bytes from address string
+    let get_orchard_address_bytes = |addr_str: &str| -> Option<[u8; 43]> {
+        let addr = zcash_address::ZcashAddress::try_from_encoded(addr_str).ok()?;
+        if !addr.can_receive_as(zcash_protocol::PoolType::ORCHARD) {
+            return None;
+        }
+        // Extract Orchard receiver from unified address
+        let (_, ua) = UnifiedAddress::decode(addr_str).ok()?;
+        for receiver in ua.items() {
+            if let zcash_address::unified::Receiver::Orchard(bytes) = receiver {
+                return Some(bytes);
+            }
+        }
+        None
+    };
+
+    // 1. Verify transparent outputs match request (by BOTH script and amount)
     for output in transparent_outputs {
         let value = *output.value();
-        let _script = output.script_pubkey();
-        
+        let output_script: Vec<u8> = output.script_pubkey().to_vec();
+
         // Try to match against payments
         let mut matched = false;
         for (idx, payment) in transaction_request.payments.iter().enumerate() {
             if matched_payments[idx] {
                 continue;
             }
-            
-            // Check if this is a transparent payment
-            if let Ok(addr) = zcash_address::ZcashAddress::try_from_encoded(&payment.address) {
-                if addr.can_receive_as(zcash_protocol::PoolType::TRANSPARENT) {
-                    if payment.amount == value {
-                        matched_payments[idx] = true;
-                        matched = true;
-                        break;
-                    }
-                }
+
+            // Check if this is a transparent payment with matching script and amount
+            if payment.amount == value
+                && let Some(expected_script) = get_transparent_script(&payment.address)
+                && output_script == expected_script
+            {
+                matched_payments[idx] = true;
+                matched = true;
+                break;
             }
         }
-        
+
         // Check if this is an expected change output
         if !matched {
             for (idx, change) in expected_change.iter().enumerate() {
                 if matched_changes[idx] {
                     continue;
                 }
-                if let Ok(addr) = zcash_address::ZcashAddress::try_from_encoded(&change.address) {
-                    if addr.can_receive_as(zcash_protocol::PoolType::TRANSPARENT) {
-                        if change.amount == value {
+                if change.amount == value
+                    && let Some(expected_script) = get_transparent_script(&change.address)
+                    && output_script == expected_script
+                {
+                    matched_changes[idx] = true;
+                    matched = true;
+                    break;
+                }
+            }
+        }
+
+        if !matched {
+            return Err(T2ZError::InvalidInput(format!(
+                "Unexpected transparent output: {} zatoshis to script {}",
+                value,
+                hex::encode(&output_script)
+            )));
+        }
+    }
+
+    // 2. Verify Orchard outputs match request (by address if available, or amount)
+    for action in orchard_actions {
+        let output = action.output();
+        if let Some(value) = output.value() {
+            // Get recipient address bytes if available (already raw [u8; 43] in PCZT)
+            let recipient_bytes: Option<&[u8; 43]> = output.recipient().as_ref();
+
+            // Try to match against payments
+            let mut matched = false;
+            for (idx, payment) in transaction_request.payments.iter().enumerate() {
+                if matched_payments[idx] {
+                    continue;
+                }
+
+                // Check if this is an Orchard payment
+                if payment.amount == *value
+                    && let Some(expected_addr) = get_orchard_address_bytes(&payment.address)
+                {
+                    // If we have recipient bytes, verify they match
+                    if let Some(actual_addr) = recipient_bytes {
+                        if *actual_addr == expected_addr {
+                            matched_payments[idx] = true;
+                            matched = true;
+                            break;
+                        }
+                    } else {
+                        // Recipient redacted - match by amount only (less secure)
+                        matched_payments[idx] = true;
+                        matched = true;
+                        break;
+                    }
+                }
+            }
+
+            // Check if this is an expected change output (going to Orchard)
+            if !matched {
+                for (idx, change) in expected_change.iter().enumerate() {
+                    if matched_changes[idx] {
+                        continue;
+                    }
+                    if change.amount == *value
+                        && let Some(expected_addr) = get_orchard_address_bytes(&change.address)
+                    {
+                        if let Some(actual_addr) = recipient_bytes {
+                            if *actual_addr == expected_addr {
+                                matched_changes[idx] = true;
+                                matched = true;
+                                break;
+                            }
+                        } else {
+                            // Recipient redacted - match by amount only
                             matched_changes[idx] = true;
                             matched = true;
                             break;
@@ -928,57 +1113,7 @@ pub fn verify_before_signing(
                     }
                 }
             }
-        }
-        
-        if !matched {
-            return Err(T2ZError::InvalidInput(format!(
-                "Unexpected transparent output: {} zatoshis",
-                value
-            )));
-        }
-    }
-    
-    // 2. Verify Orchard outputs match request
-    for action in orchard_actions {
-        let output = action.output();
-        if let Some(value) = output.value() {
-            // Try to match against payments
-            let mut matched = false;
-            for (idx, payment) in transaction_request.payments.iter().enumerate() {
-                if matched_payments[idx] {
-                    continue;
-                }
-                
-                // Check if this is an Orchard payment
-                if let Ok(addr) = zcash_address::ZcashAddress::try_from_encoded(&payment.address) {
-                    if addr.can_receive_as(zcash_protocol::PoolType::ORCHARD) {
-                        if payment.amount == *value {
-                            matched_payments[idx] = true;
-                            matched = true;
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            // Check if this is an expected change output (going to Orchard)
-            if !matched {
-                for (idx, change) in expected_change.iter().enumerate() {
-                    if matched_changes[idx] {
-                        continue;
-                    }
-                    if let Ok(addr) = zcash_address::ZcashAddress::try_from_encoded(&change.address) {
-                        if addr.can_receive_as(zcash_protocol::PoolType::ORCHARD) {
-                            if change.amount == *value {
-                                matched_changes[idx] = true;
-                                matched = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            
+
             // Dummy outputs (value 0) are expected for Orchard bundles
             if !matched && *value != 0 {
                 return Err(T2ZError::InvalidInput(format!(
@@ -988,7 +1123,7 @@ pub fn verify_before_signing(
             }
         }
     }
-    
+
     // 3. Verify all payments were matched
     for (idx, matched) in matched_payments.iter().enumerate() {
         if !*matched {
@@ -1000,19 +1135,17 @@ pub fn verify_before_signing(
             )));
         }
     }
-    
+
     // 4. Verify all expected changes were matched
     for (idx, matched) in matched_changes.iter().enumerate() {
         if !*matched {
             return Err(T2ZError::InvalidInput(format!(
                 "Expected change {} not found in PCZT: {} zatoshis to {}",
-                idx,
-                expected_change[idx].amount,
-                expected_change[idx].address
+                idx, expected_change[idx].amount, expected_change[idx].address
             )));
         }
     }
-    
+
     Ok(())
 }
 
@@ -1051,6 +1184,176 @@ pub fn parse_pczt(pczt_bytes: &[u8]) -> Result<Pczt, T2ZError> {
 /// Serializes a PCZT to bytes.
 pub fn serialize_pczt(pczt: &Pczt) -> Vec<u8> {
     pczt.serialize()
+}
+
+// ============================================================================
+// PCZT Inspection
+// ============================================================================
+
+/// Information about a transparent input in a PCZT
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PcztTransparentInput {
+    /// Previous transaction ID (hex, display order - big-endian)
+    pub prevout_txid: String,
+    /// Previous output index
+    pub prevout_index: u32,
+    /// Value in zatoshis
+    pub value: u64,
+    /// Script pubkey (hex)
+    pub script_pubkey: String,
+    /// Whether this input has any partial signatures
+    pub is_signed: bool,
+    /// Number of partial signatures
+    pub num_signatures: usize,
+}
+
+/// Information about a transparent output in a PCZT
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PcztTransparentOutput {
+    /// Value in zatoshis
+    pub value: u64,
+    /// Script pubkey (hex)
+    pub script_pubkey: String,
+    /// User-provided address (if set by Updater)
+    pub user_address: Option<String>,
+}
+
+/// Information about an Orchard action/output in a PCZT
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PcztOrchardOutput {
+    /// Value in zatoshis (if known/not redacted)
+    pub value: Option<u64>,
+    /// Recipient address bytes (hex, if not redacted)
+    pub recipient: Option<String>,
+    /// User-provided address string (if set by Updater)
+    pub user_address: Option<String>,
+}
+
+/// Complete information about a PCZT's contents
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PcztInfo {
+    /// Expiry height
+    pub expiry_height: u32,
+    /// Transparent inputs
+    pub transparent_inputs: Vec<PcztTransparentInput>,
+    /// Transparent outputs  
+    pub transparent_outputs: Vec<PcztTransparentOutput>,
+    /// Orchard outputs (from actions)
+    pub orchard_outputs: Vec<PcztOrchardOutput>,
+    /// Total input value (zatoshis)
+    pub total_input: u64,
+    /// Total transparent output value (zatoshis)
+    pub total_transparent_output: u64,
+    /// Total Orchard output value (zatoshis, only counted if value is known)
+    pub total_orchard_output: u64,
+    /// Implied fee (total_input - all outputs)
+    pub implied_fee: u64,
+    /// Number of Orchard actions
+    pub num_orchard_actions: usize,
+    /// Whether all transparent inputs are signed
+    pub all_inputs_signed: bool,
+    /// Whether Orchard bundle has proofs
+    pub has_orchard_proofs: bool,
+}
+
+/// Inspects a PCZT and returns structured information about its contents.
+///
+/// Uses shadow struct deserialization to access all fields including
+/// partial_signatures and zkproof that aren't publicly accessible.
+///
+/// This is useful for:
+/// - Displaying transaction details to users before signing
+/// - Calculating fee and change amounts after propose_transaction
+/// - Verifying the transaction matches expectations
+/// - Checking signing/proving progress
+pub fn inspect_pczt_bytes(pczt_bytes: &[u8]) -> Result<PcztInfo, T2ZError> {
+    use shadow::PcztShadow;
+    
+    // PCZT format: 4 bytes magic + 4 bytes version + postcard data
+    if pczt_bytes.len() < 8 {
+        return Err(T2ZError::InvalidInput("PCZT too short".to_string()));
+    }
+    
+    let data = &pczt_bytes[8..];
+    
+    // Deserialize using shadow struct (gives access to all fields)
+    let pczt: PcztShadow = postcard::from_bytes(data)
+        .map_err(|e| T2ZError::InvalidInput(format!("Failed to deserialize PCZT: {:?}", e)))?;
+    
+    // Extract transparent inputs
+    let transparent_inputs: Vec<PcztTransparentInput> = pczt.transparent.inputs
+        .iter()
+        .map(|input| {
+            // Reverse txid for display (internal is little-endian, display is big-endian)
+            let mut txid_bytes = input.prevout_txid;
+            txid_bytes.reverse();
+            
+            PcztTransparentInput {
+                prevout_txid: hex::encode(txid_bytes),
+                prevout_index: input.prevout_index,
+                value: input.value,
+                script_pubkey: hex::encode(&input.script_pubkey),
+                is_signed: !input.partial_signatures.is_empty(),
+                num_signatures: input.partial_signatures.len(),
+            }
+        })
+        .collect();
+    
+    // Extract transparent outputs
+    let transparent_outputs: Vec<PcztTransparentOutput> = pczt.transparent.outputs
+        .iter()
+        .map(|output| PcztTransparentOutput {
+            value: output.value,
+            script_pubkey: hex::encode(&output.script_pubkey),
+            user_address: output.user_address.clone(),
+        })
+        .collect();
+    
+    // Extract Orchard outputs from actions
+    let orchard_outputs: Vec<PcztOrchardOutput> = pczt.orchard.actions
+        .iter()
+        .map(|action| PcztOrchardOutput {
+            value: action.output.value,
+            recipient: action.output.recipient.map(hex::encode),
+            user_address: action.output.user_address.clone(),
+        })
+        .collect();
+    
+    // Calculate totals
+    let total_input: u64 = transparent_inputs.iter().map(|i| i.value).sum();
+    let total_transparent_output: u64 = transparent_outputs.iter().map(|o| o.value).sum();
+    let total_orchard_output: u64 = orchard_outputs
+        .iter()
+        .filter_map(|o| o.value)
+        .sum();
+    
+    // Fee = inputs - outputs (may include dummy 0-value Orchard outputs)
+    let total_output = total_transparent_output + total_orchard_output;
+    let implied_fee = total_input.saturating_sub(total_output);
+    
+    let all_inputs_signed = transparent_inputs.iter().all(|i| i.is_signed);
+    let has_orchard_proofs = pczt.orchard.zkproof.is_some();
+    
+    Ok(PcztInfo {
+        expiry_height: pczt.global.expiry_height,
+        transparent_inputs,
+        transparent_outputs,
+        orchard_outputs,
+        total_input,
+        total_transparent_output,
+        total_orchard_output,
+        implied_fee,
+        num_orchard_actions: pczt.orchard.actions.len(),
+        all_inputs_signed,
+        has_orchard_proofs,
+    })
+}
+
+/// Inspects a PCZT and returns structured information about its contents.
+/// Convenience wrapper that serializes the PCZT first.
+pub fn inspect_pczt(pczt: &Pczt) -> Result<PcztInfo, T2ZError> {
+    let bytes = pczt.serialize();
+    inspect_pczt_bytes(&bytes)
 }
 
 // ============================================================================

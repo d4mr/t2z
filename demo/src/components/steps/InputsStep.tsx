@@ -3,6 +3,18 @@ import { Button } from '../Button';
 import { Input } from '../Input';
 import { CodeBlock } from '../CodeBlock';
 import type { TransparentInput, KeyPair } from '../../lib/types';
+import { hexToBytes, bytesToHex } from '../../lib/crypto';
+
+/**
+ * Reverse the byte order of a hex string.
+ * Bitcoin/Zcash txids are displayed in big-endian (display order) but stored 
+ * in little-endian (internal order) in raw transactions.
+ */
+function reverseTxidBytes(txidHex: string): string {
+  const bytes = hexToBytes(txidHex);
+  bytes.reverse();
+  return bytesToHex(bytes);
+}
 
 interface Props {
   signingKey: KeyPair;
@@ -32,9 +44,12 @@ export function InputsStep({
   const handleAddInput = () => {
     try {
       // Clean and validate txid
-      let cleanTxid = txid.trim().replace(/^0x/, '');
+      let cleanTxid = txid.trim().replace(/^0x/, '').toLowerCase();
       if (cleanTxid.length !== 64) {
         throw new Error('Transaction ID must be 32 bytes (64 hex characters)');
+      }
+      if (!/^[0-9a-f]+$/.test(cleanTxid)) {
+        throw new Error('Transaction ID must be valid hexadecimal');
       }
       
       const valueNum = BigInt(value);
@@ -42,9 +57,17 @@ export function InputsStep({
         throw new Error('Value must be positive');
       }
 
+      // IMPORTANT: Reverse the txid from display order (big-endian) to internal order (little-endian)
+      // Block explorers show txids in display order, but raw transactions use internal byte order
+      const internalTxid = reverseTxidBytes(cleanTxid);
+      
+      addLog('info', 'inputs', `Converting txid from display order to internal order`);
+      addLog('info', 'inputs', `Display (explorer): ${cleanTxid}`);
+      addLog('info', 'inputs', `Internal (raw tx):  ${internalTxid}`);
+
       const input: TransparentInput = {
         pubkey: signingKey.publicKey,
-        prevoutTxid: cleanTxid,
+        prevoutTxid: internalTxid,
         prevoutIndex: parseInt(vout, 10),
         value: valueNum,
         scriptPubkey: signingKey.scriptPubkey,
@@ -137,10 +160,10 @@ export function InputsStep({
           <div className="md:col-span-2">
             <Input
               label="Transaction ID (hex)"
-              placeholder="64 character hex string"
+              placeholder="64 character hex string (from block explorer)"
               value={txid}
               onChange={(e) => setTxid(e.target.value)}
-              hint="The txid of the transaction containing the UTXO"
+              hint="Enter the txid as shown on the block explorer (display order). It will be automatically converted to internal byte order."
             />
           </div>
           <Input
@@ -177,11 +200,18 @@ export function InputsStep({
         code={`// Each input references a UTXO from a previous transaction
 const input = new WasmTransparentInput(
   pubkey,        // Your compressed public key (33 bytes hex)
-  prevoutTxid,   // Transaction ID containing the UTXO
+  prevoutTxid,   // Transaction ID in INTERNAL byte order (reversed from explorer)
   prevoutIndex,  // Index of the output in that transaction
   value,         // Amount in zatoshis (bigint)
   scriptPubkey   // P2PKH script: OP_DUP OP_HASH160 <pubkeyhash> OP_EQUALVERIFY OP_CHECKSIG
 );
+
+// IMPORTANT: TxID Byte Order
+// Block explorers show txids in "display order" (big-endian)
+// Raw transactions use "internal order" (little-endian, reversed bytes)
+// Example:
+//   Explorer shows: 3813f53766c6cc...
+//   Internal order: ...cc66c66637f51338
 
 // For real usage, get UTXO data from:
 // - Your wallet's UTXO list

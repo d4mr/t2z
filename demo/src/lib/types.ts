@@ -58,3 +58,33 @@ export interface LogEntry {
   message: string;
   data?: string;
 }
+
+// PCZT inspection result from inspect_pczt()
+export interface PcztInfo {
+  expiry_height: number;
+  transparent_inputs: Array<{
+    prevout_txid: string;
+    prevout_index: number;
+    value: number;
+    script_pubkey: string;
+    is_signed: boolean;
+    num_signatures: number;
+  }>;
+  transparent_outputs: Array<{
+    value: number;
+    script_pubkey: string;
+    user_address?: string;
+  }>;
+  orchard_outputs: Array<{
+    value?: number;
+    recipient?: string;
+    user_address?: string;
+  }>;
+  total_input: number;
+  total_transparent_output: number;
+  total_orchard_output: number;
+  implied_fee: number;
+  num_orchard_actions: number;
+  all_inputs_signed: boolean;
+  has_orchard_proofs: boolean;
+}

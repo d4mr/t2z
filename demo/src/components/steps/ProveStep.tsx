@@ -26,49 +26,74 @@ export function ProveStep({
   useEffect(() => {
     // Check if proving key is already built
     setProvingKeyReady(t2z.is_proving_key_ready());
-  }, []);
+    
+    // Check if PCZT already has proofs
+    try {
+      const info = t2z.inspect_pczt(pcztHex);
+      if (info.has_orchard_proofs) {
+        setProved(true);
+        addLog('info', 'prove', 'PCZT already has Orchard proofs');
+      }
+    } catch {
+      // Ignore
+    }
+  }, [pcztHex]);
 
   const handlePrebuildKey = async () => {
     setIsBuildingKey(true);
     addLog('info', 'prove', 'Building Orchard proving key (Halo 2 circuit)... This takes ~10 seconds');
     
-    try {
-      // Run in next tick to allow UI to update
-      await new Promise(resolve => setTimeout(resolve, 100));
-      t2z.prebuild_proving_key();
-      setProvingKeyReady(true);
-      addLog('success', 'prove', 'Proving key built and cached. Subsequent proofs will be fast.');
-    } catch (err) {
-      addLog('error', 'prove', `Failed to build proving key: ${err}`);
-    } finally {
-      setIsBuildingKey(false);
-    }
+    // Allow UI to update before the blocking operation
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Use requestAnimationFrame to ensure the loading state is painted
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try {
+          t2z.prebuild_proving_key();
+          setProvingKeyReady(true);
+          addLog('success', 'prove', 'Proving key built and cached. Subsequent proofs will be fast.');
+        } catch (err) {
+          addLog('error', 'prove', `Failed to build proving key: ${err}`);
+        } finally {
+          setIsBuildingKey(false);
+        }
+      }, 0);
+    });
   };
 
   const handleProve = async () => {
     setIsProving(true);
-    addLog('info', 'prove', 'Generating Orchard proofs...');
+    addLog('info', 'prove', 'Generating Orchard proofs... (this may take a moment)');
     
-    try {
-      const startTime = Date.now();
-      
-      const pczt = t2z.WasmPczt.from_hex(pcztHex);
-      const provedPczt = t2z.prove_transaction(pczt);
-      
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-      const newHex = provedPczt.to_hex();
-      
-      onPcztChange(newHex);
-      setProved(true);
-      
-      addLog('success', 'prove', `Orchard proofs generated in ${elapsed}s`);
-      addLog('code', 'prove', 'Proved PCZT size:', `${newHex.length} bytes (hex)`);
-      
-    } catch (err) {
-      addLog('error', 'prove', `Failed to generate proofs: ${err}`);
-    } finally {
-      setIsProving(false);
-    }
+    // Allow UI to update before the blocking operation
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Use requestAnimationFrame to ensure the loading state is painted
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try {
+          const startTime = Date.now();
+          
+          const pczt = t2z.WasmPczt.from_hex(pcztHex);
+          const provedPczt = t2z.prove_transaction(pczt);
+          
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+          const newHex = provedPczt.to_hex();
+          
+          onPcztChange(newHex);
+          setProved(true);
+          
+          addLog('success', 'prove', `Orchard proofs generated in ${elapsed}s`);
+          addLog('code', 'prove', 'Proved PCZT size:', `${newHex.length} bytes (hex)`);
+          
+        } catch (err) {
+          addLog('error', 'prove', `Failed to generate proofs: ${err}`);
+        } finally {
+          setIsProving(false);
+        }
+      }, 0);
+    });
   };
 
   return (

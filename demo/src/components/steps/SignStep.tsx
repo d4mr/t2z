@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '../Button';
 import { CodeBlock } from '../CodeBlock';
 import type { KeyPair, TransparentInput } from '../../lib/types';
@@ -27,9 +27,24 @@ export function SignStep({
   const [isSigning, setIsSigning] = useState(false);
   const [signedInputs, setSignedInputs] = useState<Set<number>>(new Set());
   const [currentPcztHex, setCurrentPcztHex] = useState(pcztHex);
-  // Default to convenience method - the get_sighash + append_signature flow
-  // requires external signing infrastructure not available in browser
-  const [useConvenienceMethod, setUseConvenienceMethod] = useState(true);
+  // Default to get_sighash + append_signature flow (spec-compliant)
+  const [useConvenienceMethod, setUseConvenienceMethod] = useState(false);
+
+  // Check initial signing status from PCZT
+  useEffect(() => {
+    try {
+      const info = t2z.inspect_pczt(currentPcztHex);
+      const alreadySigned = new Set<number>();
+      info.transparent_inputs.forEach((input: any, idx: number) => {
+        if (input.is_signed) {
+          alreadySigned.add(idx);
+        }
+      });
+      setSignedInputs(alreadySigned);
+    } catch {
+      // Ignore errors
+    }
+  }, [currentPcztHex]);
 
   const handleSignInput = async (inputIndex: number) => {
     setIsSigning(true);
