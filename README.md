@@ -1,4 +1,7 @@
-# PCZT Multi-Language SDK
+<img width="1920" height="1080" alt="t2z Hero Image" src="https://github.com/user-attachments/assets/8182ffdc-5ff6-4157-8c1b-4e112f13e243" />
+
+# t2z Multi-Language SDK
+
 
 This repository contains a comprehensive SDK for working with **Partially Constructed Zcash Transactions (PCZT)**, enabling transparent-only Zcash users to send shielded outputs using the Orchard protocol.
 
