@@ -1,216 +1,162 @@
-<img width="1920" height="1080" alt="t2z Hero Image" src="https://github.com/user-attachments/assets/8182ffdc-5ff6-4157-8c1b-4e112f13e243" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/8182ffdc-5ff6-4157-8c1b-4e112f13e243" alt="t2z - portable libraries for transparent → shielded transactions" />
+</p>
 
-# t2z Multi-Language SDK
+<p align="center">
+  <strong>Portable libraries for transparent → shielded Zcash transactions</strong>
+</p>
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/@d4mr/t2z-wasm"><img src="https://img.shields.io/npm/v/@d4mr/t2z-wasm?style=flat-square&color=f59e0b" alt="npm version"></a>
+  <a href="https://t2z.d4mr.com"><img src="https://img.shields.io/badge/docs-t2z.d4mr.com-blue?style=flat-square" alt="Documentation"></a>
+  <a href="https://t2z-wasm-demo.d4mr.com"><img src="https://img.shields.io/badge/demo-live-green?style=flat-square" alt="Live Demo"></a>
+  <a href="https://github.com/zcash/zips/pull/1063"><img src="https://img.shields.io/badge/ZIP-374-purple?style=flat-square" alt="ZIP 374"></a>
+</p>
 
-This repository contains a comprehensive SDK for working with **Partially Constructed Zcash Transactions (PCZT)**, enabling transparent-only Zcash users to send shielded outputs using the Orchard protocol.
+---
 
-## Project Structure
+**t2z** enables existing transparent-only Zcash infrastructure to send to shielded Orchard addresses without requiring a full wallet implementation. Built on the [PCZT (Partially Constructed Zcash Transaction)](https://github.com/zcash/zips/pull/1063) format.
 
-```
-pczt/
-├── wrapper/              # Rust wrapper crate (core functionality)
-│   ├── src/
-│   │   ├── lib.rs       # Core PCZT wrapper API
-│   │   ├── napi_bindings.rs  # Node.js/TypeScript bindings
-│   │   └── uniffi_bindings.rs # Go/Kotlin/Java bindings
-│   └── Cargo.toml
-└── sdks/                # Language-specific SDKs
-    ├── typescript/      # TypeScript/Node.js SDK
-    ├── go/             # Go SDK
-    └── kotlin/         # Kotlin SDK
-```
+## ✨ Features
 
-## Features
+- **🔐 Privacy upgrade path** — Send from transparent inputs to shielded Orchard outputs
+- **📦 PCZT format** — Multi-party transaction construction, hardware wallet support
+- **⚡ No downloads** — Orchard uses Halo 2, proving key built on demand (~10s, cached)
+- **🦀 Battle-tested** — Built on official Zcash Rust libraries
 
-- ✅ **Multi-language support**: TypeScript, Go, and Kotlin
-- ✅ **NAPI bindings**: Native Node.js performance + WASM for browsers
-- ✅ **UniFFI bindings**: Cross-language FFI for Go, Kotlin, and Java
-- ✅ **Complete PCZT workflow**: Creator, Prover, Signer, Combiner, Extractor roles
-- ✅ **Orchard protocol**: Support for shielded outputs
+## 📦 Available SDKs
 
-## API Overview
+| Platform | Package | Status |
+|----------|---------|--------|
+| **TypeScript** | [`@d4mr/t2z-wasm`](https://www.npmjs.com/package/@d4mr/t2z-wasm) | ✅ Available |
+| **Go** | `github.com/d4mr/t2z-go` | 🚧 Coming Soon |
+| **Kotlin** | `com.d4mr:t2z` | 🚧 Coming Soon |
 
-The SDK implements the following functions as specified in the hackathon prompt:
-
-### Core Functions
-
-1. **`propose_transaction`** - Creates a PCZT from transparent inputs
-   - Implements: Creator, Constructor, IO Finalizer roles
-   
-2. **`prove_transaction`** - Adds Orchard proofs to the PCZT
-   - Implements: Prover role
-   - Uses Rust proving keys for performance
-
-3. **`verify_before_signing`** - Pre-signing validation
-   - Optional verification before signing
-
-4. **`get_sighash`** - Gets signature hash for an input
-   - Implements: Part of Signer role (ZIP 244)
-
-5. **`append_signature`** - Adds a signature to the PCZT
-   - Implements: Part of Signer role
-
-6. **`combine`** - Combines multiple PCZTs
-   - Implements: Combiner role
-   - Useful for parallel signing/proving
-
-7. **`finalize_and_extract`** - Produces final transaction bytes
-   - Implements: Spend Finalizer, Transaction Extractor roles
-
-8. **`parse_pczt` / `serialize_pczt`** - Serialization utilities
-
-## Building
-
-### Rust Wrapper
+## 🚀 Quick Start
 
 ```bash
-cd wrapper
-
-# Build with NAPI bindings (for TypeScript)
-cargo build --release --features napi-bindings
-
-# Build with UniFFI bindings (for Go/Kotlin)
-cargo build --release --features uniffi-bindings
-
-# Run tests
-cargo test
+npm install @d4mr/t2z-wasm
 ```
-
-### TypeScript SDK
-
-```bash
-cd sdks/typescript
-
-# Install dependencies
-npm install
-
-# Build native module
-npm run build
-
-# Run tests
-npm test
-```
-
-### Go SDK
-
-```bash
-cd sdks/go
-
-# Build (requires uniffi-generated bindings)
-go build
-```
-
-### Kotlin SDK
-
-```bash
-cd sdks/kotlin
-
-# Build (requires uniffi-generated bindings)
-./gradlew build
-```
-
-## Usage Examples
-
-### TypeScript
 
 ```typescript
-import { proposeTransaction, proveTransaction, getSighash, appendSignature, finalizeAndExtract } from '@d4mr/pczt';
+import * as t2z from '@d4mr/t2z-wasm';
 
-// 1. Propose transaction
-const pczt = proposeTransaction(inputs, {
-  transparentOutputs: [],
-  shieldedOutputs: [{
-    address: "u1...", // Unified address with Orchard receiver
-    value: 90000,
-    memo: null
-  }],
-  fee: 10000,
-  consensusBranchId: 0xc2d6d0b4, // Nu6
-  expiryHeight: 2500000,
-  coinType: 133 // Zcash mainnet
-});
+// 1. Create the transaction
+let pczt = t2z.propose_transaction(
+  [new t2z.WasmTransparentInput(
+    pubkeyHex,           // 33-byte compressed pubkey
+    prevoutTxidLE,       // Previous tx ID (little-endian)
+    0,                   // Output index
+    1_000_000n,          // 0.01 ZEC in zatoshis
+    scriptPubkeyHex,     // P2PKH script
+    null                 // Sequence (default)
+  )],
+  [new t2z.WasmPayment(
+    'u1recipient...',    // Unified address with Orchard
+    900_000n,            // Amount in zatoshis
+    null,                // Memo (hex)
+    null                 // Label
+  )],
+  'u1change...',         // Change address
+  'testnet',             // Network
+  3720100                // Expiry height
+);
 
-// 2. Add proofs (required for shielded outputs)
-const proved = await proveTransaction(pczt);
+// 2. Sign transparent inputs (external signing supported)
+const sighash = t2z.get_sighash(pczt, 0);
+const signature = await yourSigner.sign(sighash);  // Hardware wallet, HSM, etc.
+pczt = t2z.append_signature(pczt, 0, pubkeyHex, signature);
 
-// 3. Sign inputs
-let signed = proved;
-for (let i = 0; i < inputs.length; i++) {
-  const sighash = getSighash(signed, i);
-  const signature = await signWithYourWallet(sighash);
-  signed = appendSignature(signed, i, signature);
-}
+// 3. Generate Orchard proofs
+pczt = t2z.prove_transaction(pczt);
 
-// 4. Extract final transaction
-const txHex = finalizeAndExtract(signed);
-
-// 5. Broadcast
-await broadcastTransaction(txHex);
+// 4. Finalize and broadcast
+const txHex = t2z.finalize_and_extract_hex(pczt);
+await broadcast(txHex);
 ```
 
-## Development Status
+## 📖 Documentation
 
-### ✅ Completed
-- Rust wrapper core structure
-- Error handling using pczt crate errors
-- NAPI bindings for TypeScript
-- UniFFI bindings for Go/Kotlin
-- Project structure for all SDKs
-- Build configuration
+- **[Full Documentation](https://t2z.d4mr.com)** — Guides, API reference, examples
+- **[Live Demo](https://t2z-wasm-demo.d4mr.com)** — Interactive transaction builder
+- **[API Reference](https://t2z.d4mr.com/api-reference)** — Complete function docs
 
-### 🚧 TODO
-- Implement Constructor role (adding inputs/outputs)
-- Implement Updater role for modifying PCZT data
-- Add actual proving functionality (requires proving keys)
-- Add signature hash computation (ZIP 244)
-- Add signature verification
-- Transaction serialization in extractor
-- Complete TypeScript SDK wrapper
-- Generate UniFFI bindings for Go/Kotlin
-- Add comprehensive tests
-- Add examples for each language
-- Documentation and API references
+## 🔧 Transaction Flow
 
-## Dependencies
+```
+┌─────────┐    ┌────────┐    ┌──────┐    ┌───────┐    ┌──────────┐
+│ Propose │───▶│ Verify │───▶│ Sign │───▶│ Prove │───▶│ Finalize │
+└─────────┘    └────────┘    └──────┘    └───────┘    └──────────┘
+                (optional)
+```
 
-### Rust
-- `pczt` 0.5.0 - Core PCZT functionality
-- `zcash_primitives` - Zcash protocol primitives
-- `zcash_protocol` - Protocol types
-- `orchard` - Orchard protocol
-- `napi-rs` - Node.js bindings
-- `uniffi` - Multi-language FFI
+1. **Propose** — Create PCZT from inputs and payments
+2. **Verify** — Validate PCZT matches request (if from third party)
+3. **Sign** — Add signatures for transparent inputs
+4. **Prove** — Generate Orchard ZK proofs
+5. **Finalize** — Extract raw transaction for broadcast
 
-### TypeScript
-- `@napi-rs/cli` - Build tooling
-- TypeScript 5.3+
+## 🏗️ Project Structure
 
-## Resources
+```
+t2z/
+├── crates/
+│   ├── t2z-core/        # Core Rust library
+│   ├── t2z-wasm/        # WebAssembly bindings
+│   └── t2z-uniffi/      # Go/Kotlin bindings (coming soon)
+├── demo/                # Interactive demo (React + Vite)
+└── docs/                # Documentation (Mintlify)
+```
 
-- [ZIP 374: PCZT Specification](https://zips.z.cash/zip-0374) (Draft)
-- [pczt Rust Crate Documentation](https://github.com/zcash/librustzcash/tree/main/pczt)
-- [ZIP 321: Payment Request Format](https://zips.z.cash/zip-0321)
+## 🛠️ Building from Source
+
+### Prerequisites
+
+- [Rust](https://rustup.rs/) (nightly toolchain)
+- [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/)
+- LLVM (for WASM compilation)
+
+### macOS
+
+```bash
+# Install LLVM and wasi-libc
+brew install llvm
+brew install --HEAD aspect-build/aspect/wasi-libc
+
+# Add wasm32 target
+rustup target add wasm32-unknown-unknown
+
+# Build the WASM package
+cd crates/t2z-wasm
+CC="$(brew --prefix llvm)/bin/clang" \
+  AR="$(brew --prefix llvm)/bin/llvm-ar" \
+  RUSTUP_TOOLCHAIN=nightly \
+  wasm-pack build --scope d4mr
+```
+
+### Linux
+
+```bash
+# Install dependencies (Ubuntu/Debian)
+sudo apt install clang lld
+
+# Add wasm32 target
+rustup target add wasm32-unknown-unknown
+
+# Build
+cd crates/t2z-wasm
+RUSTUP_TOOLCHAIN=nightly wasm-pack build --scope d4mr
+```
+
+The built package will be in `crates/t2z-wasm/pkg/`.
+
+## 📚 Related
+
+- [ZIP 374: PCZT Specification](https://github.com/zcash/zips/pull/1063) (Draft)
+- [ZIP 317: Proportional Fee Mechanism](https://zips.z.cash/zip-0317)
 - [ZIP 244: Transaction Signature Validation](https://zips.z.cash/zip-0244)
+- [ZIP 321: Payment Request URIs](https://zips.z.cash/zip-0321)
 
-## License
+## 📄 License
 
-MIT
-
-## Contributing
-
-Contributions welcome! Please open an issue or PR.
-
-## Hackathon Prompt
-
-This project was created for the "Sending to Shielded for Transparent Users" hackathon challenge.
-
-**Goal**: Enable Bitcoin-derived transparent-only Zcash functionality to send shielded outputs using the PCZT API defined in ZIP 374.
-
-**Requirements Met**:
-- ✅ Multi-language library (TypeScript, Go, Kotlin)
-- ✅ Based on PCZT API (ZIP 374)
-- ✅ Orchard support (Sapling not required)
-- ✅ All specified roles implemented
-- ✅ Uses Rust pczt crate for proving
-
+MIT © [d4mr](https://github.com/d4mr)

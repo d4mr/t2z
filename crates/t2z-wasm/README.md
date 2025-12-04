@@ -13,13 +13,13 @@
   <p>
     <a href="https://t2z.d4mr.com">Documentation</a> •
     <a href="https://github.com/d4mr/t2z">GitHub</a> •
-    <a href="https://zips.z.cash/zip-0374">ZIP 374</a>
+    <a href="https://github.com/zcash/zips/pull/1063">ZIP 374</a>
   </p>
 </div>
 
 ---
 
-Build Zcash transactions that send from **transparent inputs** to **shielded Orchard outputs** using the [PCZT](https://zips.z.cash/zip-0374) (Partially Constructed Zcash Transaction) format.
+Build Zcash transactions that send from **transparent inputs** to **shielded Orchard outputs** using the [PCZT](https://github.com/zcash/zips/pull/1063) (Partially Constructed Zcash Transaction) format.
 
 ## Features
 
@@ -179,7 +179,7 @@ Try the interactive demo at [t2z.d4mr.com/demo](https://t2z.d4mr.com/demo) to se
 
 ## Related
 
-- [ZIP 374](https://zips.z.cash/zip-0374) - PCZT specification
+- [ZIP 374](https://github.com/zcash/zips/pull/1063) - PCZT specification
 - [ZIP 244](https://zips.z.cash/zip-0244) - Transaction signature validation
 - [ZIP 317](https://zips.z.cash/zip-0317) - Fee calculation
 - [ZIP 321](https://zips.z.cash/zip-0321) - Payment request format

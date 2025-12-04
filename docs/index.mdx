@@ -13,7 +13,7 @@ description: "Build Zcash transactions from transparent inputs to shielded Orcha
 
 **t2z** (transparent-to-z) is a multi-platform library for building Zcash transactions that send from **transparent inputs** to **shielded Orchard outputs**.
 
-It implements the [PCZT (Partially Constructed Zcash Transaction)](https://zips.z.cash/zip-0374) format defined in ZIP 374, enabling:
+It implements the [PCZT (Partially Constructed Zcash Transaction)](https://github.com/zcash/zips/pull/1063) format defined in ZIP 374, enabling:
 
 - **Multi-party transaction construction** — Different parties can contribute inputs, signatures, and proofs
 - **Hardware wallet support** — External signing via `get_sighash` + `append_signature`
@@ -68,7 +68,7 @@ Enable existing transparent-only Zcash infrastructure to send to shielded addres
 
 ### 📦 PCZT Format
 
-Full [ZIP 374](https://zips.z.cash/zip-0374) support allows transactions to be constructed across multiple parties, systems, or hardware devices.
+Full [ZIP 374](https://github.com/zcash/zips/pull/1063) support allows transactions to be constructed across multiple parties, systems, or hardware devices.
 
 ### ⚡ No Downloads Required
 
@@ -124,7 +124,7 @@ A t2z transaction follows this flow:
 
 ## Related Specifications
 
-- [ZIP 374](https://zips.z.cash/zip-0374) — Partially Constructed Zcash Transaction Format
+- [ZIP 374](https://github.com/zcash/zips/pull/1063) — Partially Constructed Zcash Transaction Format
 - [ZIP 244](https://zips.z.cash/zip-0244) — Transaction Identifier and Signature Validation
 - [ZIP 317](https://zips.z.cash/zip-0317) — Proportional Transfer Fee Mechanism
 - [ZIP 321](https://zips.z.cash/zip-0321) — Payment Request URIs

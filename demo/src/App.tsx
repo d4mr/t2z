@@ -215,7 +215,7 @@ export function App() {
               <div className="w-px h-6 bg-white/10 mx-1" />
               
               <a 
-                href="https://zips.z.cash/zip-0374"
+                href="https://github.com/zcash/zips/pull/1063"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-gray-400 hover:text-amber-400 transition-colors"
@@ -336,7 +336,7 @@ export function App() {
               </a>
               <span className="text-gray-700">•</span>
               <a 
-                href="https://zips.z.cash/zip-0374"
+                href="https://github.com/zcash/zips/pull/1063"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-amber-400 transition-colors"
