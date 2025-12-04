@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@d4mr/t2z-wasm": "^0.1.0",
+    "@d4mr/t2z-wasm": "^0.0.2",
     "@noble/curves": "^1.8.1",
     "@noble/hashes": "^1.7.1",
     "@scure/base": "^1.2.4",
