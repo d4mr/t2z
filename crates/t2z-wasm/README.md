@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/d4mr/t2z/main/demo/assets/t2z_icon.png" alt="t2z" width="120" />
+  <img src="https://raw.githubusercontent.com/d4mr/t2z/master/demo/assets/t2z_icon.png" alt="t2z" width="120" />
   
   <h1>t2z-wasm</h1>
   
