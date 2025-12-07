@@ -45,3 +45,16 @@ code, pre, .font-mono {
   background: #4a4a7e;
 }
 
+/* Loading animation */
+@keyframes loading {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(50%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+

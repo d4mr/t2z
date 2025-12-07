@@ -14,18 +14,14 @@ import {
 } from './components/steps';
 import * as t2z from '@d4mr/t2z-wasm';
 
+// Initialize WASM at module load time (outside React)
+t2z.init();
+
 export function App() {
   const { state, actions } = useTransactionFlow();
 
   useEffect(() => {
-    // Initialize WASM and log version
-    try {
-      t2z.init();
-      actions.addLog('info', 'setup', `t2z-wasm initialized (v${t2z.version()})`);
-    } catch (e) {
-      // Might already be initialized
-      actions.addLog('info', 'setup', `t2z-wasm ready (v${t2z.version()})`);
-    }
+    actions.addLog('info', 'setup', `t2z-wasm initialized (v${t2z.version()})`);
   }, []);
 
   const renderStep = () => {
@@ -350,4 +346,3 @@ export function App() {
     </div>
   );
 }
-
